@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "author": "Anonymous maker",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -144, "left": -33.56, "attrs": {} },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": -70.6,
+      "left": 115.2,
+      "attrs": { "color": "green", "xray": "1", "bounce": "0" }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r2",
+      "top": -111.8,
+      "left": 66.35,
+      "rotate": 270,
+      "attrs": { "value": "10000" }
+    },
+    {
+      "type": "wokwi-ntc-temperature-sensor",
+      "id": "ntc1",
+      "top": -131.8,
+      "left": -221.4,
+      "attrs": {}
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:4", "btn1:1.l", "green", [ "h28.8", "v-48" ] ],
+    [ "btn1:2.l", "esp:3V3", "green", [ "v-115", "h-144.15" ] ],
+    [ "r2:2", "esp:GND.2", "green", [ "h-19.2", "v20.4" ] ],
+    [ "r2:1", "btn1:1.l", "green", [ "h0", "v19.2" ] ],
+    [ "esp:GND.1", "ntc1:GND", "black", [ "h-28.65", "v-115.2" ] ],
+    [ "esp:14", "ntc1:OUT", "green", [ "h-38.25", "v-76.8" ] ],
+    [ "ntc1:VCC", "esp:3V3", "red", [ "h38.4", "v-19.2" ] ]
+  ],
+  "dependencies": {}
+}
