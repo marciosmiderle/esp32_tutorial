@@ -1,0 +1,83 @@
+
+#include "src/NtcSensor.hpp"
+#include "src/NtcView.hpp"
+
+class Sample {
+  int value = 0;
+};
+
+class Button {
+  const int buttonPin = 4;
+  int buttonState = LOW;
+};
+
+
+/* class PartitionMeasure { */
+/*   map<int, list<Sendor*> > cycle; */
+
+/*   bool shouldMeasure(Sensor& sensor) { */
+/*     unsigned long now; */
+/*   } */
+
+/*   void updateModel() */
+/*   { */
+/*   } */
+
+/* }; */
+
+
+class Controller {
+ public:
+  const int buttonPin = 4;
+  int buttonState = LOW;
+
+  NtcSensor* model;
+
+  void buttonPressed()
+  {
+
+  }
+
+  void buttonReleased()
+  {
+    model->enableSampling();
+  }
+
+
+  void processInput()
+  {
+    int buttonCurrentState = digitalRead(buttonPin);
+    if (buttonCurrentState == HIGH && buttonState == LOW) {
+      buttonPressed();
+      buttonState = HIGH;
+    }
+    if (buttonCurrentState == LOW && buttonState == HIGH) {
+      buttonReleased();
+      buttonState = LOW;
+    }
+  }
+};
+
+NtcSensor ntc;
+Controller ctrl;
+NtcView view;
+
+void setup()
+{
+  Serial.begin(115200);
+  pinMode(ctrl.buttonPin, INPUT);
+  pinMode(ntc.pin, INPUT);
+
+  ntc.modelUpdateEvent = [&view]() {
+    view.invalidate();
+  };
+  view.model = &ntc;
+  ctrl.model = &ntc;
+}
+
+void loop()
+{
+  ctrl.processInput();
+  ntc.update();
+  view.render();
+}
