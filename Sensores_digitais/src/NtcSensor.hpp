@@ -6,21 +6,21 @@ class NtcSensor {
 
 public:
   int pin    = 14;
-  float ntcProcessedValue    = 0;
-  float ntcFilteredTemperature = 25.0;
+  float processedValue    = 0;
+  float filteredTemperatureWithEMA = 25.0;
 
-  static const int NUM_SAMPLES = 32; //TODO template
+  static const int NUM_SAMPLES = 32;
   int samples[NUM_SAMPLES];
-  int indiceAmostra = 0;
-  unsigned int intervaloAmostras = 5; // ms
-  unsigned long ultimoTempoAmostra = 0;
+  int sampleIndex = 0;
+  unsigned int samplingInterval_ms = 5; // ms
+  unsigned long lastSampleReadTime_ms = 0;
 
   bool samplingEnabled = false;
   bool samplingComplete = false;
   std::function<void()> modelUpdateEvent;
 
-  bool shouldMeasure(); // override
-  int readSample();  // override
+  bool shouldMeasure();
+  int readSample();
   void measure();
 
   void enableSampling();
@@ -29,8 +29,8 @@ public:
   float temperatureInCensius(float analogValue);
 
   void coletarEProcessarAmostras();
-  void ntcColetaDeAmostrasCompletaEvent();
-  float ntcProcessedTemperatureWithEMAFilter(float ntcProcessedVal);
+  void coletaDeAmostrasCompletaEvent();
+  float processedTemperatureWithEMAFilter(float ntcProcessedVal);
   // Processa as amostras já coletadas (média aparada)
-  float ntcProcessedValueRemovingOutliersFromSamples();
+  float processedValueRemovingOutliersFromSamples();
 };

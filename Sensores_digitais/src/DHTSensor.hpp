@@ -11,13 +11,15 @@ public:
   TempAndHumidity processedValueWithEMA = {.temperature = 25.0,
                                             .humidity = 50.0};
 
-  static const int NUM_SAMPLES = 4; // TODO template
+  static const int NUM_SAMPLES = 4;
   TempAndHumidity samples[NUM_SAMPLES];
-  int indiceAmostra = 0;
-  unsigned int intervaloAmostras_ms = 500;
-  unsigned long ultimoTempoAmostra_ms = 0;
+  int sampleIndex = 0;
+  unsigned int samplingInterval_ms = 500;
+  unsigned long lastSampleReadTime_ms = 0;
   unsigned long readSampleLastTimeOk_ms = 0;
-  const unsigned long readSampleTempoMaximoEmFalha_ms = 20000;
+  const unsigned long readSampleInFailMaxTime_ms = 5000;
+  const unsigned long readSampleInFailWaitTimeForRetry_ms = 5000;
+  bool samplingInFail = false;
 
   bool samplingEnabled = false;
   bool samplingComplete = false;
@@ -36,6 +38,9 @@ public:
 
   void resetSampling();
   void enableSampling();
+  bool samplingInFailShouldRetry();
+  void setReadSampleInFail();
+
 
   void update();
 

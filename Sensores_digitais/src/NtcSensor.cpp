@@ -4,8 +4,8 @@
 
 bool NtcSensor::shouldMeasure() { // override
   unsigned long agora = millis();
-  if (agora - ultimoTempoAmostra >= intervaloAmostras) {
-    ultimoTempoAmostra = agora;
+  if (agora - lastSampleReadTime_ms >= samplingInterval_ms) {
+    lastSampleReadTime_ms = agora;
 
     return true;
   }
@@ -22,20 +22,20 @@ void NtcSensor::measure()
   if (samplingComplete) return;
 
   if (shouldMeasure()) {
-    samples[indiceAmostra] = readSample();
-    indiceAmostra++;
+    samples[sampleIndex] = readSample();
+    sampleIndex++;
 
-    if (indiceAmostra >= NUM_SAMPLES) {
+    if (sampleIndex >= NUM_SAMPLES) {
       samplingComplete = true;
     }
 
     if (samplingComplete) {
       samplingEnabled = false;
-      ntcColetaDeAmostrasCompletaEvent();
+      coletaDeAmostrasCompletaEvent();
 
       // prepara para a próxima
       samplingComplete = false;
-      indiceAmostra = 0;
+      sampleIndex = 0;
     }
   }
 }
@@ -68,25 +68,25 @@ void NtcSensor::coletarEProcessarAmostras()
   measure();
 }
 
-void NtcSensor::ntcColetaDeAmostrasCompletaEvent()
+void NtcSensor::coletaDeAmostrasCompletaEvent()
 {
-  ntcProcessedValue = ntcProcessedValueRemovingOutliersFromSamples();
-  ntcFilteredTemperature = ntcProcessedTemperatureWithEMAFilter(ntcProcessedValue);
+  processedValue = processedValueRemovingOutliersFromSamples();
+  filteredTemperatureWithEMA = processedTemperatureWithEMAFilter(processedValue);
 
   modelUpdateEvent();
 }
 
-float NtcSensor::ntcProcessedTemperatureWithEMAFilter(float ntcProcessedVal)
+float NtcSensor::processedTemperatureWithEMAFilter(float ntcProcessedVal)
 {
   float tempAtual = constrain(temperatureInCensius(ntcProcessedVal), -273, 1000);
   // Filtro EMA (Exponential Moving Average)
   const float EMA_ALPHA = 0.15;
   return EMA_ALPHA * tempAtual + (1.0 - EMA_ALPHA) *
-    constrain(ntcFilteredTemperature, -273, 1000);
+    constrain(filteredTemperatureWithEMA, -273, 1000);
 }
 
 // Processa as amostras já coletadas (média aparada)
-float NtcSensor::ntcProcessedValueRemovingOutliersFromSamples()
+float NtcSensor::processedValueRemovingOutliersFromSamples()
 {
   const int len = sizeof(samples) / sizeof(samples[0]);
   std::sort(samples, samples + len);

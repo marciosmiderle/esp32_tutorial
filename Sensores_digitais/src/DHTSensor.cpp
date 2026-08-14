@@ -13,8 +13,8 @@ void DHTSensor::begin(int aPin) {
 
 bool DHTSensor::shouldMeasure() { // override
   unsigned long agora = millis();
-  if (agora - ultimoTempoAmostra_ms >= intervaloAmostras_ms) {
-    ultimoTempoAmostra_ms = agora;
+  if (agora - lastSampleReadTime_ms >= samplingInterval_ms) {
+    lastSampleReadTime_ms = agora;
 
     return true;
   }
@@ -32,7 +32,7 @@ bool DHTSensor::readSampleWasOk() {
 
 bool DHTSensor::readSampleTempoMaximoEmFalhaUltrapassado() {
   unsigned long agora = millis();
-  return agora - readSampleLastTimeOk_ms >= readSampleTempoMaximoEmFalha_ms;
+  return agora - readSampleLastTimeOk_ms >= readSampleInFailMaxTime_ms;
 }
 
 void DHTSensor::measure()
@@ -40,18 +40,19 @@ void DHTSensor::measure()
   if (samplingComplete) return;
 
   if (shouldMeasure()) {
-    samples[indiceAmostra] = readSample();
+    samples[sampleIndex] = readSample();
     if (readSampleWasOk()) {
-      indiceAmostra++;
+      sampleIndex++;
       readSampleLastTimeOk_ms = millis();
     } else {
       if (readSampleTempoMaximoEmFalhaUltrapassado()) {
+        setReadSampleInFail();
         modelReadSampleInFailEvent();
         return;
       }
     }
 
-    if (indiceAmostra >= NUM_SAMPLES) {
+    if (sampleIndex >= NUM_SAMPLES) {
       samplingComplete = true;
     }
 
@@ -67,16 +68,28 @@ void DHTSensor::measure()
 
 void DHTSensor::resetSampling() {
   samplingComplete = false;
-  indiceAmostra = 0;
+  sampleIndex = 0;
 }
 
 void DHTSensor::enableSampling() {
-  samplingEnabled = true;
+  if (!samplingInFail || samplingInFailShouldRetry()) {
+    samplingEnabled = true;
+    samplingInFail = false;
+  }
 }
 
-void DHTSensor::update() {
-  coletarEProcessarAmostras();
+bool DHTSensor::samplingInFailShouldRetry() {
+  unsigned long now_ms = millis();
+  return now_ms > (readSampleLastTimeOk_ms + readSampleInFailMaxTime_ms +
+                   readSampleInFailWaitTimeForRetry_ms);
 }
+
+void DHTSensor::setReadSampleInFail() {
+  samplingInFail = true;
+}
+
+
+void DHTSensor::update() { coletarEProcessarAmostras(); }
 
 void DHTSensor::coletarEProcessarAmostras() {
   if (!samplingEnabled) return;
