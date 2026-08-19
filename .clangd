@@ -1,0 +1,15 @@
+CompileFlags:
+    Compiler: clang++
+    Remove:
+     - -mlongcalls
+     - -mdisable-hardware-atomics
+     - -mfix-esp32-psram-cache-issue
+     - -mfix-esp32-psram-cache-strategy=*
+     - -fstrict-volatile-bitfields
+     - -fno-tree-switch-conversion
+    # - -iprefix*
+    # - -iwithprefixbefore*
+    # - --target=*
+    # - -driver-mode=*
+    # - -fno-canonical-system-headers
+    # - -fno-fat-lto-objects

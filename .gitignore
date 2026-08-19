@@ -1,2 +1,8 @@
 build
-.clangd
+
+ID    
+GRTAGS
+GPATH 
+GTAGS
+cscope.*
+BROWSE
