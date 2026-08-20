@@ -1,0 +1,12 @@
+default_profile: dev
+
+profiles:
+  dev:
+    fqbn: esp32:esp32:esp32doit-devkit-v1
+    libraries:
+      - "DHT sensor library for ESPx (1.19.0)"
+
+  release:
+    fqbn: esp32:esp32:esp32doit-devkit-v1
+    libraries:
+      - "DHT sensor library for ESPx (1.19.0)"

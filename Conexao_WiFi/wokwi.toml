@@ -1,0 +1,6 @@
+# Wokwi Configuration File
+# Reference: https://docs.wokwi.com/vscode/project-config
+[wokwi]
+version = 1
+firmware = 'build/Conexao_WiFi.ino.bin'
+elf = 'build/Conexao_WiFi.ino.elf'
