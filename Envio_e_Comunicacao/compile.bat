@@ -1,0 +1,1 @@
+arduino-cli compile --optimize-for-debug --build-path ./build --libraries ~/Programas/arduino/libraries --warnings all --verbose
