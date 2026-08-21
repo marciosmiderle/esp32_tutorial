@@ -1,7 +1,7 @@
 #include "MqttClient.hpp"
 #include <ArduinoJson.h>
 
-static MqttClient *instance = nullptr;
+MqttClient* MqttClient::instance = nullptr;
 
 MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
                        const char* _telemetryTopic, const char* _eventTopic,
@@ -11,134 +11,170 @@ MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
   : broker(_broker), port(_port), clientId(_clientId),
     telemetryTopic(_telemetryTopic), eventTopic(_eventTopic),
     commandTopic(_commandTopic), commandSubscribeTopic(_commandSubscribeTopic),
-    retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs), connected(false) {
+    retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs),
+    connected(false), userCallback(nullptr) {
+
+  buildUniqueClientId();
+
   client.setClient(wifiClient);
   client.setServer(broker, port);
+  client.setBufferSize(1024);      // JSON de telemetria precisa de espaço
+  client.setKeepAlive(30);         // segundos
+  client.setSocketTimeout(10);     // segundos
+
   instance = this;
   client.setCallback(mqttCallbackWrapper);
 }
 
+void MqttClient::buildUniqueClientId() {
+  // Evita colisão no broker público: prefixo + MAC
+  uint64_t mac = ESP.getEfuseMac();
+  snprintf(resolvedClientId, sizeof(resolvedClientId),
+           "%s-%04X%04X",
+           clientId ? clientId : "estacao",
+           (uint16_t)(mac >> 32),
+           (uint16_t)(mac & 0xFFFF));
+}
+
+bool MqttClient::wifiReady() const {
+  return WiFi.status() == WL_CONNECTED;
+}
+
 bool MqttClient::connect() {
-  if (connected) return true;
-  
-  // // Se está em tryLater, não tenta conectar
-  // if (retry.isInTryLater()) {
-  //   Serial.println("[MQTT] Aguardando tryLater expirar...");
-  //   return false;
-  // }
-  
-  // // Se tryLater expirou, reseta
-  // if (retry.tryLaterExpired()) {
-  //   Serial.println("[MQTT] TryLater expirado, resetando retries");
-  //   retry.reset();
-  // }
-  
-  // // Verifica se pode tentar
-  // if (!retry.canStart()) {
-  //   Serial.println("[MQTT] Não pode iniciar (tryLater ativo)");
-  //   return false;
-  // }
-
-
-  if (!retry.canRetry()) {
-    //Serial.println("[MQTT] retry não permite iniciar");
-    return false;
-  }
-
-  Serial.print("[MQTT] Tentando conectar a ");
-  Serial.print(broker);
-  Serial.print(":");
-  Serial.println(port);
-  
-  bool success = client.connect(clientId);
-  
-  if (success) {
-    Serial.println("[MQTT] Conectado com sucesso");
-    
-    // Subscreve ao tópico de comandos
-    if (client.subscribe(commandSubscribeTopic)) {
-      Serial.print("[MQTT] Inscrito no tópico: ");
-      Serial.println(commandSubscribeTopic);
-    } else {
-      Serial.print("[MQTT] Falha ao subscrever: ");
-      Serial.println(commandSubscribeTopic);
-    }
-    
-    retry.reset();
+  if (client.connected()) {
     connected = true;
     return true;
-  } else {
-    Serial.print("[MQTT] Falha na conexão. Estado: ");
-    Serial.println(client.state());
-    
-    // retry.registerAttempt();
-    
-    // if (!retry.hasRetriesLeft()) {
-    //   Serial.println("[MQTT] Sem retries restantes, entrando em tryLater");
-    //   retry.enterTryLater();
-    // }
-    
+  }
+
+  // Sem WiFi não tenta (não queima retry)
+  if (!wifiReady()) {
     connected = false;
     return false;
   }
+
+  if (!retry.canRetry()) {
+    return false;
+  }
+
+  Serial.print("[MQTT] Conectando a ");
+  Serial.print(broker);
+  Serial.print(":");
+  Serial.print(port);
+  Serial.print(" como ");
+  Serial.println(resolvedClientId);
+
+  // cleanSession=true: re-subscribe sempre após connect
+  bool success = client.connect(resolvedClientId);
+
+  if (success) {
+    Serial.println("[MQTT] Conectado");
+
+    String cmdTopic(resolvedClientId);
+    cmdTopic.concat("/");
+    cmdTopic.concat(commandSubscribeTopic);
+    if (client.subscribe(cmdTopic.c_str(), 1)) {
+      Serial.print("[MQTT] Subscrito: ");
+      Serial.println(cmdTopic);
+    } else {
+      Serial.print("[MQTT] Falha subscribe: ");
+      Serial.println(cmdTopic);
+    }
+
+    retry.reset();
+    connected = true;
+    return true;
+  }
+
+  Serial.print("[MQTT] Falha connect, state=");
+  Serial.println(client.state());
+  connected = false;
+  return false;
 }
 
 void MqttClient::disconnect() {
-  client.disconnect();
+  if (client.connected()) {
+    client.disconnect();
+  }
   connected = false;
   retry.reset();
   Serial.println("[MQTT] Desconectado");
 }
 
+bool MqttClient::ensureConnection() {
+  if (client.connected()) {
+    connected = true;
+    return true;
+  }
+  connected = false;
+  return connect();
+}
+
 bool MqttClient::publishTelemetry(const Message& message) {
   if (!ensureConnection()) {
+    Serial.println("[MQTT] publishTelemetry: sem conexao");
     return false;
   }
-  
+
   String jsonPayload = message.toJson();
-  
-  Serial.print("[MQTT] Publicando telemetria em ");
-  Serial.print(telemetryTopic);
-  Serial.print(" Payload: ");
-  Serial.print(jsonPayload.substring(0, 10));
-  
-  bool success = client.publish(telemetryTopic, jsonPayload.c_str());
-  
-  if (success) {
-    Serial.println(" OK");
-  } else {
-    Serial.println(" Falha");
+  if (jsonPayload.length() + 16 > client.getBufferSize()) {
+    Serial.println("[MQTT] Payload maior que o buffer MQTT");
+    return false;
   }
-  
+
+  String telTopic(resolvedClientId);
+  telTopic.concat("/");
+  telTopic.concat(telemetryTopic);
+  Serial.print("[MQTT] PUB ");
+  Serial.print(telTopic);
+  Serial.print(" (");
+  Serial.print(jsonPayload.length());
+  Serial.print(" B) ");
+
+  client.loop();
+  // QoS 1: pelo menos uma entrega no broker
+  bool success = client.publish(telTopic.c_str(), jsonPayload.c_str(), false);
+  client.loop();
+
+  if (success) {
+    Serial.println("OK");
+  } else {
+    Serial.println("FALHA");
+    connected = false;
+  }
   return success;
 }
 
 bool MqttClient::publishEvent(const char* eventType, const char* eventData) {
   if (!ensureConnection()) {
+    Serial.println("[MQTT] publishEvent: sem conexao");
     return false;
   }
-  
+
   JsonDocument doc;
   doc["type"] = eventType;
   doc["data"] = eventData;
   doc["timestamp"] = millis();
-  
+
   String jsonPayload;
   serializeJson(doc, jsonPayload);
-  
-  Serial.print("[MQTT] Publicando evento em ");
-  Serial.print(eventTopic);
-  Serial.print(" Payload: ");
-  Serial.print(jsonPayload.substring(0, 10));
-  
-  bool success = client.publish(eventTopic, jsonPayload.c_str());
-  
+
+  String eveTopic(resolvedClientId);
+  eveTopic.concat("/");
+  eveTopic.concat(eventTopic);
+  Serial.print("[MQTT] EVT ");
+  Serial.print(eveTopic);
+  Serial.print(" ");
+
+  client.loop();
+  bool success = client.publish(eveTopic.c_str(), jsonPayload.c_str(), false);
+  client.loop();
+
   if (success) {
-    Serial.println(" OK");
+    Serial.println("OK");
   } else {
-    Serial.println(" Falha");
+    Serial.println("FALHA");
+    connected = false;
   }
-  
   return success;
 }
 
@@ -147,44 +183,46 @@ void MqttClient::setCallback(MqttCallback callback) {
 }
 
 void MqttClient::mqttCallbackWrapper(char* topic, byte* payload, unsigned int length) {
-  if (instance != nullptr) {
+  if (instance) {
     instance->handleCommand(topic, payload, length);
   }
 }
 
 void MqttClient::handleCommand(char* topic, byte* payload, unsigned int length) {
-  Serial.print("[MQTT] Comando recebido em ");
+  Serial.print("[MQTT] CMD ");
   Serial.print(topic);
   Serial.print(": ");
-  
-  char message[length + 1];
-  memcpy(message, payload, length);
-  message[length] = '\0';
+
+  // Cópia segura
+  char message[128];
+  unsigned int n = length < sizeof(message) - 1 ? length : sizeof(message) - 1;
+  memcpy(message, payload, n);
+  message[n] = '\0';
   Serial.println(message);
-  
-  // Chama o callback do usuário se estiver definido
+
   if (userCallback) {
     userCallback(topic, payload, length);
   }
 }
 
-bool MqttClient::ensureConnection() {
-  if (connected && client.connected()) {
-    return true;
-  }
-  
-  connected = false;
-  return connect();
-}
-
 void MqttClient::update() {
-  if (!connected) {
-    // Tenta reconectar automaticamente
-    connect();
-  } else {
-    // Mantém a conexão viva
-    client.loop();
+  // Só faz sentido com WiFi
+  if (!wifiReady()) {
+    if (connected) {
+      connected = false;
+    }
+    return;
   }
+
+  // Mantém keepalive + recebe publishes
+  if (client.connected()) {
+    client.loop();
+    connected = true;
+    return;
+  }
+
+  connected = false;
+  connect();  // respeita RetryLogic e só tenta com WiFi up
 }
 
 bool MqttClient::isConnected() {

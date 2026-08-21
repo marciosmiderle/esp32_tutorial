@@ -25,9 +25,7 @@ void Message::buildFrom(Estacao& estacao) {
   PirSensor& pir = estacao.pir;
   
   // Dados brutos dos sensores
-  const float ntcTemp = ntc.filteredTemperatureWithEMA;
   const TempAndHumidity dhtValues = dht.processedValueWithEMA;
-  const float dhtTemp = dhtValues.temperature;
   const float dhtHumidity = dhtValues.humidity;
   const bool pirMotion = pir.inMotion();
   
@@ -65,7 +63,7 @@ void Message::formatObservations(Estacao& estacao) {
 }
 
 String Message::toJson() const {
-  StaticJsonDocument<512> doc;
+  JsonDocument doc;
   
   // Telemetria básica
   doc["timestamp"] = timestamp;
@@ -74,22 +72,22 @@ String Message::toJson() const {
   doc["motionDetected"] = motionDetected;
   
   // Status dos sensores
-  JsonObject sensors = doc.createNestedObject("sensors");
+  JsonObject sensors = doc["sensors"].to<JsonObject>();
   
-  JsonObject ntc = sensors.createNestedObject("ntc");
+  JsonObject ntc = sensors["ntc"].to<JsonObject>();
   ntc["health"] = ntcHealth;
   ntc["healthRatio"] = ntcHealthRatio;
   
-  JsonObject dht = sensors.createNestedObject("dht");
+  JsonObject dht = sensors["dht"].to<JsonObject>();
   dht["health"] = dhtHealth;
   dht["healthRatio"] = dhtHealthRatio;
   
-  JsonObject pir = sensors.createNestedObject("pir");
+  JsonObject pir = sensors["pir"].to<JsonObject>();
   pir["health"] = pirHealth;
   pir["healthRatio"] = pirHealthRatio;
   
   // Interpretações
-  JsonObject interpretation = doc.createNestedObject("interpretation");
+  JsonObject interpretation = doc["interpretation"].to<JsonObject>();
   interpretation["tempStatus"] = tempStatus;
   interpretation["humidityStatus"] = humidityStatus;
   interpretation["motionStatus"] = motionStatus;
@@ -98,7 +96,7 @@ String Message::toJson() const {
   interpretation["attentionStatus"] = attentionStatus;
   
   // Observações
-  JsonObject observations = doc.createNestedObject("observations");
+  JsonObject observations = doc["observations"].to<JsonObject>();
   observations["tempObs"] = tempObs;
   observations["humidityObs"] = humidityObs;
   observations["motionObs"] = motionObs;

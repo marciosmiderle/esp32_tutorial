@@ -13,6 +13,7 @@
 #include "src/EstacaoView.hpp"
 
 #include "src/WiFiManager.hpp"
+
 #include "src/Message.hpp"
 #include "src/HttpClient.hpp"
 #include "src/MqttClient.hpp"
@@ -139,12 +140,10 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   // Processa comandos simples
   if (strcmp(message, "led_on") == 0) {
     Serial.println("[COMANDO] Acionando LED (simulado)");
-    // digitalWrite(LED_PIN, HIGH);
   } else if (strcmp(message, "led_off") == 0) {
     Serial.println("[COMANDO] Desligando LED (simulado)");
-    // digitalWrite(LED_PIN, LOW);
   } else if (strcmp(message, "read_now") == 0) {
-    Serial.println("[COMANDO] Forçando leitura imediata dos sensores");
+    Serial.println("[COMANDO] Mostrando a leitura ambiental atual da estação");
     estView.invalidate();
   } else {
     Serial.print("[COMANDO] Comando desconhecido: ");
@@ -250,7 +249,7 @@ void loop() {
   
   // Envia dados para HTTP e MQTT periodicamente
   if (!wif.isConnected()) {
-    Serial.println("\nWiFi desconectado, pulando envio de mensagens");
+    return;
   } else {
     unsigned long currentTime = millis();
     if (currentTime - lastSendTime >= SEND_INTERVAL_MS) {
@@ -267,9 +266,7 @@ void loop() {
         Serial.println("\n--- Publicando via MQTT ---");
         mqttClient.publishTelemetry(currentMessage);
       } else {
-        Serial.println("\n[MQTT] Não conectado, tentando reconectar...");
-        mqttClient.disconnect();
-        mqttClient.connect();
+        Serial.println("\n[MQTT] Ainda nao conectado (update() esta tentando)");
       }
     }
   }

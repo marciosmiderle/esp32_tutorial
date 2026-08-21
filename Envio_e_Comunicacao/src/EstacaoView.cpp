@@ -5,8 +5,6 @@ EstacaoView::EstacaoView(Estacao* estacao) {
   model = estacao;
 }
 
-
-
 void EstacaoView::logValues() {
   NtcSensor& ntc = model->ntc;
   const char* ntcHealth = ntc.health();
@@ -89,14 +87,6 @@ void EstacaoView::logValues() {
                 motionObs.c_str(), motionStatus,
                 divergenceStatus, divergenceObs,
                 attentionStatus);
-  // Serial.printf(fmt, 
-  //   ntcHealth, dhtHealth, pirHealth,
-  //   ntcRatio, dhtRatio, pirRatio,
-  //   tempObs.c_str(), tempStatus,
-  //   humidityObs.c_str(), humidityStatus,
-  //   motionObs.c_str(), motionStatus,
-  //   divergenceStatus, divergenceObs,
-  //   attentionStatus);
 }
 
 void EstacaoView::addError(String error) {

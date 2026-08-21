@@ -44,15 +44,17 @@ Todas as requisições são logadas no Serial com:
 
 ### Broker e Tópicos
 
-| Item | Valor |
-|------|-------|
-| **Broker** | `broker.hivemq.com` |
-| **Porta** | 1883 |
-| **Client ID** | `estacao_meteorologica_001` |
-| **Tópico de Telemetria** | `estacao/telemetria` |
-| **Tópico de Eventos** | `estacao/eventos` |
-| **Tópico de Comandos (sub)** | `estacao/comandos/entrada` |
-| **Tópico de Comandos (pub)** | `estacao/comandos/resposta` |
+| Item                         | Valor                                     |
+|------------------------------|-------------------------------------------|
+| **Broker**                   | `broker.hivemq.com`                       |
+| **Porta**                    | 1883                                      |
+| **Client ID**                | `estacao_meteorologica_001-<MAC ADDRESS>` |
+| **Tópico de Telemetria**     | `estacao/telemetria`                      |
+| **Tópico de Eventos**        | `estacao/eventos`                         |
+| **Tópico de Comandos (sub)** | `estacao/comandos/entrada`                |
+| **Tópico de Comandos (pub)** | `estacao/comandos/resposta`               |
+
+Importante: os tópicos são prefixados com o ClientID para evitar colisões.
 
 ### Publicação de Telemetria
 - Envia JSON completo da mensagem a cada 10 segundos
@@ -77,15 +79,15 @@ Payload de exemplo:
 
 O sistema subscreve ao tópico `estacao/comandos/entrada` e processa os seguintes comandos:
 
-| Comando | Ação |
-|---------|------|
-| `led_on` | Aciona LED (simulado) |
-| `led_off` | Desliga LED (simulado) |
-| `read_now` | Força leitura imediata dos sensores |
+| Comando    | Ação                                                   |
+|------------|--------------------------------------------------------|
+| `led_on`   | Aciona LED (simulado)                                  |
+| `led_off`  | Desliga LED (simulado)                                 |
+| `read_now` | Mostra a interpretação ambiental da estação no console |
 
 Para testar, publique no broker MQTT:
 ```bash
-mosquitto_pub -h broker.hivemq.com -t "estacao/comandos/entrada" -m "read_now"
+mosquitto_pub -h broker.hivemq.com -t "<ClientID>/estacao/comandos/entrada" -m "read_now"
 ```
 
 ### Recuperação de Conexão
@@ -97,12 +99,12 @@ mosquitto_pub -h broker.hivemq.com -t "estacao/comandos/entrada" -m "read_now"
 
 O sistema continua operando nas seguintes situações:
 
-| Falha | Comportamento |
-|-------|---------------|
-| Sensor inválido | Outros sensores continuam lendo; erro é registrado |
-| WiFi cai | Aquisição local continua; HTTP/MQTT aguardam reconexão |
-| API HTTP indisponível | Retry automático; MQTT continua funcionando |
-| Broker MQTT indisponível | Retry automático; HTTP continua funcionando |
+| Falha                    | Comportamento                                          |
+|--------------------------|--------------------------------------------------------|
+| Sensor inválido          | Outros sensores continuam lendo; erro é registrado     |
+| WiFi cai                 | Aquisição local continua; HTTP/MQTT aguardam reconexão |
+| API HTTP indisponível    | Retry automático; MQTT continua funcionando            |
+| Broker MQTT indisponível | Retry automático; HTTP continua funcionando            |
 
 ## Frequência de Envio
 
