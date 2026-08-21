@@ -2,3 +2,5 @@
   # See https://docs.wokwi.com/guides/libraries
 
 DHT sensor library for ESPx
+ArduinoJson
+PubSubClient

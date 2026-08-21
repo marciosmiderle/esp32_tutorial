@@ -27,11 +27,12 @@ public:
   void start();
   void stop();
   void update();
+  bool isConnected() const;
 
 private:
   RetryLogic retry;
   bool started = false;
 
   void handleFailure();
-  wl_status_t getStatus();
+  wl_status_t getStatus() const;
 };

@@ -105,6 +105,10 @@ void WiFiManager::update() {
   prevStatus = currentStatus;
 }
 
+bool WiFiManager::isConnected() const {
+  return getStatus() == WL_CONNECTED;
+}
+
 void WiFiManager::handleFailure() {
   // Se não tem mais retries disponíveis, entra em tryLater
   if (!retry.hasRetriesLeft()) {
@@ -115,7 +119,7 @@ void WiFiManager::handleFailure() {
 
   // Tem retries disponíveis, mas o timeout entre tentativas ainda não passou?
   // Apenas aguarda, não faz nada.
-  if (!retry.isRetryTimeoutElapsed()) {
+  if (!retry.retryTimeoutHasElapsed()) {
     return;
   }
 
@@ -124,6 +128,6 @@ void WiFiManager::handleFailure() {
   start();
 }
 
-wl_status_t WiFiManager::getStatus() {
+wl_status_t WiFiManager::getStatus() const {
   return WiFi.status();
 }

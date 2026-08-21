@@ -6,10 +6,10 @@ public:
   RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned long tryLaterTimeoutMs);
 
   bool hasRetriesLeft() const;
-  bool isRetryTimeoutElapsed() const;
-  bool canRetry() const;
+  bool retryTimeoutHasElapsed() const;
+  bool canRetry();
   bool canStart() const;
-  bool isInTryLater() const;
+  bool isInTryLater();
   bool tryLaterExpired() const;
 
   // Ações

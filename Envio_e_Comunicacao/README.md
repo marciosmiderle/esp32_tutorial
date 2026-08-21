@@ -1,3 +1,152 @@
+# Envio por HTTP e Comunicação MQTT
+
+## Arquitetura
+
+O sistema foi estendido para enviar dados de telemetria via HTTP POST e MQTT, utilizando uma classe `Message` única para evitar duplicação de código. Ambos os protocolos utilizam a mesma lógica de retry (`RetryLogic`) para lidar com falhas de comunicação.
+
+## Classe Message
+
+A classe `Message` (arquivos `src/Message.hpp` e `src/Message.cpp`) encapsula todos os dados relevantes da estação meteorológica:
+
+- **Telemetria básica**: temperatura, umidade, detecção de movimento, timestamp
+- **Status dos sensores**: saúde e ratio de cada sensor (NTC, DHT, PIR)
+- **Interpretações**: status térmico, de umidade, movimento, divergência, nível de atenção
+- **Observações**: strings formatadas para display
+
+O método `toJson()` serializa todos esses dados em JSON para envio tanto por HTTP quanto por MQTT.
+
+## Envio por HTTP
+
+### Configuração
+- **API URL**: `http://httpbin.org/post` (API de teste que ecoa o payload)
+- **Método**: POST com Content-Type: application/json
+- **Formato**: JSON completo da mensagem
+
+### Estratégia de Retry
+- **Max retries**: 5 tentativas
+- **Retry timeout**: 2000ms entre tentativas
+- **TryLater timeout**: 30000ms após esgotar retries
+
+Quando a API está indisponível:
+1. O sistema tenta até 5 vezes com intervalo de 2s
+2. Se todas falharem, entra em modo "tryLater" por 30s
+3. Após 30s, reseta os counters e tenta novamente
+4. A aquisição de dados continua normalmente mesmo durante falhas HTTP
+
+### Registro de Resultados
+Todas as requisições são logadas no Serial com:
+- Código de resposta HTTP
+- Payload enviado
+- Resposta recebida
+- Status de sucesso/falha
+
+## Comunicação MQTT
+
+### Broker e Tópicos
+
+| Item | Valor |
+|------|-------|
+| **Broker** | `broker.hivemq.com` |
+| **Porta** | 1883 |
+| **Client ID** | `estacao_meteorologica_001` |
+| **Tópico de Telemetria** | `estacao/telemetria` |
+| **Tópico de Eventos** | `estacao/eventos` |
+| **Tópico de Comandos (sub)** | `estacao/comandos/entrada` |
+| **Tópico de Comandos (pub)** | `estacao/comandos/resposta` |
+
+### Publicação de Telemetria
+- Envia JSON completo da mensagem a cada 10 segundos
+- Mesmo formato utilizado no HTTP
+- Reconexão automática quando o broker fica indisponível
+
+### Publicação de Eventos
+Eventos relevantes são publicados automaticamente:
+- `motion_start`: Quando movimento é detectado pelo PIR
+- `motion_stop`: Quando movimento cessa
+
+Payload de exemplo:
+```json
+{
+  "type": "motion_start",
+  "data": "Movimento detectado",
+  "timestamp": 12345678
+}
+```
+
+### Comandos Remotos
+
+O sistema subscreve ao tópico `estacao/comandos/entrada` e processa os seguintes comandos:
+
+| Comando | Ação |
+|---------|------|
+| `led_on` | Aciona LED (simulado) |
+| `led_off` | Desliga LED (simulado) |
+| `read_now` | Força leitura imediata dos sensores |
+
+Para testar, publique no broker MQTT:
+```bash
+mosquitto_pub -h broker.hivemq.com -t "estacao/comandos/entrada" -m "read_now"
+```
+
+### Recuperação de Conexão
+- Tentativa de reconexão automática no `update()` do MqttClient
+- Mesma estratégia de retry do HTTP (5 retries, 2s timeout, 30s tryLater)
+- Mantém `client.loop()` chamado para processar mensagens recebidas
+
+## Resiliência do Sistema
+
+O sistema continua operando nas seguintes situações:
+
+| Falha | Comportamento |
+|-------|---------------|
+| Sensor inválido | Outros sensores continuam lendo; erro é registrado |
+| WiFi cai | Aquisição local continua; HTTP/MQTT aguardam reconexão |
+| API HTTP indisponível | Retry automático; MQTT continua funcionando |
+| Broker MQTT indisponível | Retry automático; HTTP continua funcionando |
+
+## Frequência de Envio
+
+- **Intervalo**: 10 segundos entre envios
+- **Condição**: Apenas se houver WiFi conectado
+- **Fallback**: Se desconectado, tenta reconectar antes de cada envio
+
+## Exemplo de Payload JSON
+
+```json
+{
+  "timestamp": 12345678,
+  "temperature": 25.3,
+  "humidity": 60.2,
+  "motionDetected": false,
+  "sensors": {
+    "ntc": {"health": "Good", "healthRatio": 1.0},
+    "dht": {"health": "Good", "healthRatio": 1.0},
+    "pir": {"health": "Good", "healthRatio": 1.0}
+  },
+  "interpretation": {
+    "tempStatus": "Normal",
+    "humidityStatus": "Normal",
+    "motionStatus": "Parado",
+    "sensorDivergence": false,
+    "attentionLevel": 0,
+    "attentionStatus": "Verde"
+  },
+  "observations": {
+    "tempObs": "25.3C",
+    "humidityObs": "60.2%",
+    "motionObs": "Nenhum",
+    "divergenceObs": "OK"
+  }
+}
+```
+
+## Bibliotecas Utilizadas
+
+Adicionado ao `libraries.txt`:
+- `ArduinoJson`: Serialização/desserialização JSON
+- `PubSubClient`: Cliente MQTT
+
+
 # Conexão WiFi
 
 - Indica os estados da conexão no console

@@ -5,22 +5,44 @@ RetryLogic::RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned lo
       retryTimeoutMs(retryTimeoutMs),
       tryLaterTimeoutMs(tryLaterTimeoutMs) {}
 
+bool RetryLogic::canRetry() {
+  if (isInTryLater()) {
+    Serial.println("Aguardando tryLater expirar...");
+    return false;
+  }
+  
+  if (tryLaterExpired()) {
+    Serial.println("TryLater expirado, resetando retries");
+    reset();
+  }
+
+  if (!hasRetriesLeft()) {
+    Serial.println("Sem mais retries, entrando no tryLater");
+    enterTryLater();
+    return false;
+  }
+
+  if (!retryTimeoutHasElapsed()) {
+    return false;
+  }
+
+  registerAttempt();
+
+  return true;
+}
+
 bool RetryLogic::hasRetriesLeft() const {
   return retryCount < maxRetries;
 }
 
-bool RetryLogic::isRetryTimeoutElapsed() const {
+bool RetryLogic::retryTimeoutHasElapsed() const {
   return (millis() - lastAttemptMs) >= retryTimeoutMs;
 }
 
-bool RetryLogic::canRetry() const {
-  return hasRetriesLeft() && isRetryTimeoutElapsed();
-}
-
-bool RetryLogic::canStart() const {
-  if (tryLaterUntilMs == 0) return true;
-  return millis() >= tryLaterUntilMs;
-}
+// bool RetryLogic::canStart() const {
+//   if (tryLaterUntilMs == 0) return true;
+//   return millis() >= tryLaterUntilMs;
+// }
 
 void RetryLogic::registerAttempt() {
   retryCount++;
@@ -37,7 +59,7 @@ void RetryLogic::reset() {
   tryLaterUntilMs = 0;
 }
 
-bool RetryLogic::isInTryLater() const {
+bool RetryLogic::isInTryLater() {
   return tryLaterUntilMs > 0 && millis() < tryLaterUntilMs;
 }
 

@@ -5,8 +5,12 @@ profiles:
     fqbn: esp32:esp32:esp32doit-devkit-v1
     libraries:
       - "DHT sensor library for ESPx (1.19.0)"
+      - "ArduinoJson (7.4.3)"
+      - "PubSubClient (2.8.0)"
 
   release:
     fqbn: esp32:esp32:esp32doit-devkit-v1
     libraries:
       - "DHT sensor library for ESPx (1.19.0)"
+      - "ArduinoJson (7.4.3)"
+      - "PubSubClient (2.8.0)"
