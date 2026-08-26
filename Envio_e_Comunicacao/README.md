@@ -84,6 +84,8 @@ O sistema subscreve ao tópico `estacao/comandos/entrada` e processa os seguinte
 | `led_on`   | Aciona LED (simulado)                                  |
 | `led_off`  | Desliga LED (simulado)                                 |
 | `read_now` | Mostra a interpretação ambiental da estação no console |
+| `firmware update <url>` | Inicia OTA (ver seção OTA Update) |
+| `firmware markOk` | Confirma firmware atual após boot OTA |
 
 Para testar, publique no broker MQTT:
 ```bash
@@ -240,3 +242,53 @@ Feita apenas para o DHT. Temos um timeout e retry para uma amostragem isolada, e
 # Como rodar
 
 Um arquivo para rodar no simulador wokwi via comando wokwi-cli está na raiz do projeto. É preciso gerar um token de API conforme a documentação. Antes é preciso compilar usando o aquivo compile.bat, que usa o arduino-cli.
+
+# OTA Update (feature/ota-update)
+
+Atualização de firmware via MQTT + HTTP, com verificação de integridade.
+
+## Comandos MQTT
+
+Publique no tópico `<ClientID>/estacao/comandos/entrada`:
+
+| Comando | Ação |
+|---------|------|
+| `firmware update <url_do_bin>` | Baixa o `.bin` e o hash (`.md5` ou `.sha256` de mesmo nome), grava na partição OTA e reinicia |
+| `firmware markOk` | Confirma o firmware atual como válido após o boot |
+
+Exemplo:
+
+```bash
+# 1) Hospede firmware.bin e firmware.md5 (ou .sha256) no mesmo path base
+# 2) Dispare o update
+mosquitto_pub -h broker.hivemq.com \
+  -t "<ClientID>/estacao/comandos/entrada" \
+  -m "firmware update https://exemplo.com/firmware.bin"
+
+# 3) Após o reboot bem-sucedido
+mosquitto_pub -h broker.hivemq.com \
+  -t "<ClientID>/estacao/comandos/entrada" \
+  -m "firmware markOk"
+```
+
+## Arquivos de hash
+
+O cliente tenta, nesta ordem:
+
+1. `<url sem .bin>.md5`
+2. `<url sem .bin>.sha256`
+
+O conteúdo pode ser só o hex, ou no formato clássico `hash  nome_arquivo`.
+
+## Classe `OtaUpdater`
+
+- Mesmo estilo do restante do projeto: classe com `begin()` / `update()`, `RetryLogic`, callback de status.
+- Fluxo: `FetchingHash` → `Downloading` → verificação → `Update.end` → `ESP.restart()`.
+- Em falha de rede, URL/hash ficam em NVS (`Preferences` namespace `ota`) e o próximo ciclo (ou boot) retoma a partir do hash já conhecido.
+- Limitação da API `Update`: após `abort()` não há seek seguro na partição; o download do bin é refeito do zero, mas sem precisar baixar o hash de novo.
+
+## Observações
+
+- É necessário partição OTA no esquema de flash (padrão Arduino-ESP32 com OTA).
+- O download do bin é síncrono dentro de `update()` (com `yield()`); firmwares grandes ocupam o loop por alguns segundos.
+- Eventos de progresso/erro também vão para o tópico de eventos MQTT (`type: ota`).
