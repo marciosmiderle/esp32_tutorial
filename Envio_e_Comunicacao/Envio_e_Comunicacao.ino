@@ -17,6 +17,7 @@
 #include "src/Message.hpp"
 #include "src/HttpClient.hpp"
 #include "src/MqttClient.hpp"
+#include "src/OtaUpdater.hpp"
 
 const uint8_t NTC_PIN     = 34;
 const uint8_t NTC_BTN_PIN = 27;
@@ -53,6 +54,8 @@ const char* MQTT_COMMAND_SUBSCRIBE_TOPIC = "estacao/comandos/entrada";
 MqttClient mqttClient(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID,
                       MQTT_TELEMETRY_TOPIC, MQTT_EVENT_TOPIC,
                       MQTT_COMMAND_TOPIC, MQTT_COMMAND_SUBSCRIBE_TOPIC);
+
+OtaUpdater ota;
 
 Message currentMessage;
 unsigned long lastSendTime = 0;
@@ -133,11 +136,37 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   char message[length + 1];
   memcpy(message, payload, length);
   message[length] = '\0';
-  
+
   Serial.print("[COMANDO] Recebido: ");
   Serial.println(message);
-  
-  // Processa comandos simples
+
+  // firmware update <url>
+  if (strncmp(message, "firmware update", 15) == 0) {
+    const char* url = message + 15;
+    while (*url == ' ') ++url;
+    if (*url == '\0') {
+      Serial.println("[COMANDO] Uso: firmware update <url_do_bin>");
+      mqttClient.publishEvent("ota", "uso: firmware update <url>");
+      return;
+    }
+    if (ota.startUpdate(url)) {
+      mqttClient.publishEvent("ota", "download iniciado");
+    } else {
+      mqttClient.publishEvent("ota", ota.getLastError());
+    }
+    return;
+  }
+
+  // firmware markOk
+  if (strcmp(message, "firmware markOk") == 0) {
+    if (ota.markOk()) {
+      mqttClient.publishEvent("ota", "firmware marcado como valido");
+    } else {
+      mqttClient.publishEvent("ota", "markOk falhou");
+    }
+    return;
+  }
+
   if (strcmp(message, "led_on") == 0) {
     Serial.println("[COMANDO] Acionando LED (simulado)");
   } else if (strcmp(message, "led_off") == 0) {
@@ -208,6 +237,15 @@ void consoleInput() {
         mqttClient.publishTelemetry(currentMessage);
       }
     }
+    if (comando == 'o') {
+      // ou <url>  — dispara OTA via serial (teste)
+      // om       — markOk
+      comando = Serial.peek();
+      if (comando == 'm') {
+        Serial.read();  // consome 'm'
+        ota.markOk();
+      }
+    }
   }
 }
 
@@ -222,8 +260,17 @@ void setup() {
   
   // Configura callback MQTT
   mqttClient.setCallback(mqttCommandCallback);
-  
+
+  ota.begin();
+  ota.setStatusCallback([](OtaUpdater::State s, const char* detail) {
+    if (s == OtaUpdater::State::Failed) {
+      Serial.print("[OTA][cb] falha: ");
+      Serial.println(detail);
+    }
+  });
+
   Serial.println("=== Estacao Meteorologica Iniciada ===");
+  Serial.println("OTA: comandos MQTT 'firmware update <url>' e 'firmware markOk'");
   Serial.println("HTTP API: httpbin.org/post (eco)");
   Serial.println("MQTT Broker: broker.hivemq.com:1883");
   Serial.println("Topicos MQTT:");
@@ -241,6 +288,7 @@ void loop() {
   est.update();
   wif.update();
   mqttClient.update();
+  ota.update();
 
   ntcView.render();
   dhtView.render();
