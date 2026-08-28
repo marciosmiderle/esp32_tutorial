@@ -17,6 +17,7 @@
 #include "src/Message.hpp"
 #include "src/HttpClient.hpp"
 #include "src/MqttClient.hpp"
+#include "src/OtaUpdater.hpp"
 
 const uint8_t NTC_PIN     = 34;
 const uint8_t NTC_BTN_PIN = 27;
@@ -53,6 +54,8 @@ const char* MQTT_COMMAND_SUBSCRIBE_TOPIC = "estacao/comandos/entrada";
 MqttClient mqttClient(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID,
                       MQTT_TELEMETRY_TOPIC, MQTT_EVENT_TOPIC,
                       MQTT_COMMAND_TOPIC, MQTT_COMMAND_SUBSCRIBE_TOPIC);
+
+OtaUpdater ota;
 
 Message currentMessage;
 unsigned long lastSendTime = 0;
@@ -133,11 +136,56 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   char message[length + 1];
   memcpy(message, payload, length);
   message[length] = '\0';
-  
+
   Serial.print("[COMANDO] Recebido: ");
   Serial.println(message);
-  
-  // Processa comandos simples
+
+  if (strcmp(message, "firmware_update_stop") == 0) {
+    if (ota.stopUpdate()) {
+      mqttClient.publishEvent("ota", "update cancelado");
+    } else {
+      mqttClient.publishEvent("ota", ota.getLastError());
+    }
+    return;
+  }
+
+  // firmware_update <url>
+  if (strncmp(message, "firmware_update", 15) == 0) {
+    const char* url = message + 15;
+    while (*url == ' ') ++url;
+    if (*url == '\0') {
+      Serial.println("[COMANDO] Uso: firmware_update <url_do_bin>");
+      mqttClient.publishEvent("ota", "uso: firmware_update <url>");
+      return;
+    }
+    if (ota.startUpdate(url)) {
+      mqttClient.publishEvent("ota", "download iniciado");
+    } else {
+      mqttClient.publishEvent("ota", ota.getLastError());
+    }
+    return;
+  }
+
+  // firmware_mark_ok
+  if (strcmp(message, "firmware_mark_ok") == 0) {
+    if (ota.markOk()) {
+      mqttClient.publishEvent("ota", "firmware marcado como valido");
+    } else {
+      mqttClient.publishEvent("ota", "mark ok falhou");
+    }
+    return;
+  }
+
+  // firmware_mark_invalid_reboot
+  if (strcmp(message, "firmware_mark_invalid_reboot") == 0) {
+    if (ota.markInvalidReboot()) {
+      mqttClient.publishEvent("ota", "firmware marcado como valido, reboot");
+    } else {
+      mqttClient.publishEvent("ota", "firmware marcado como valido falhou");
+    }
+    return;
+  }
+
   if (strcmp(message, "led_on") == 0) {
     Serial.println("[COMANDO] Acionando LED (simulado)");
   } else if (strcmp(message, "led_off") == 0) {
@@ -208,6 +256,17 @@ void consoleInput() {
         mqttClient.publishTelemetry(currentMessage);
       }
     }
+    if (comando == 'o') {
+      comando = Serial.peek();
+      if (comando == 'm') {
+        Serial.read();
+        ota.markOk();
+      }
+      if (comando == 'i') {
+        Serial.read();
+        ota.markInvalidReboot();
+      }
+    }
   }
 }
 
@@ -222,7 +281,15 @@ void setup() {
   
   // Configura callback MQTT
   mqttClient.setCallback(mqttCommandCallback);
-  
+
+  ota.begin();
+  ota.setStatusCallback([](OtaUpdater::State s, const char* detail) {
+    if (s == OtaUpdater::State::Failed) {
+      Serial.print("[OTA][cb] falha: ");
+      Serial.println(detail);
+    }
+  });
+
   Serial.println("=== Estacao Meteorologica Iniciada ===");
   Serial.println("HTTP API: httpbin.org/post (eco)");
   Serial.println("MQTT Broker: broker.hivemq.com:1883");
@@ -231,6 +298,10 @@ void setup() {
   Serial.println("  - Eventos: estacao/eventos");
   Serial.println("  - Comandos (sub): estacao/comandos/entrada");
   Serial.println("  - Comandos (pub): estacao/comandos/resposta");
+  Serial.println("OTA: comandos ouvidos em estacao/comandos/entrada");
+  Serial.println("  firmware_update <url>");
+  Serial.println("  firmware_mark_ok");
+  Serial.println("  firmware_mark_invalid_reboot");
 }
 
 void loop() {
@@ -241,6 +312,7 @@ void loop() {
   est.update();
   wif.update();
   mqttClient.update();
+  ota.update();
 
   ntcView.render();
   dhtView.render();
