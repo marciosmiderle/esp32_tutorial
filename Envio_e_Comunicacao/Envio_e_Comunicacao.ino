@@ -140,6 +140,15 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   Serial.print("[COMANDO] Recebido: ");
   Serial.println(message);
 
+  if (strcmp(message, "firmware_update_stop") == 0) {
+    if (ota.stopUpdate()) {
+      mqttClient.publishEvent("ota", "update cancelado");
+    } else {
+      mqttClient.publishEvent("ota", ota.getLastError());
+    }
+    return;
+  }
+
   // firmware_update <url>
   if (strncmp(message, "firmware_update", 15) == 0) {
     const char* url = message + 15;

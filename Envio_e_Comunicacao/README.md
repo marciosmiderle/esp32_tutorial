@@ -85,6 +85,7 @@ O sistema subscreve ao tópico `estacao/comandos/entrada` e processa os seguinte
 | `led_off`                      | Desliga LED (simulado)                                 |
 | `read_now`                     | Mostra a interpretação ambiental da estação no console |
 | `firmware_update <url>`        | Inicia OTA (ver seção OTA Update)                      |
+| `firmware_update_stop`         | Cancela um update se iniciado                          |
 | `firmware_mark_ok`             | Confirma firmware atual após o update                  |
 | `firmware_mark_invalid_reboot` | Marca o update como inválido e reinicia                |
 

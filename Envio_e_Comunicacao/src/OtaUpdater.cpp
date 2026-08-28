@@ -78,6 +78,22 @@ bool OtaUpdater::startUpdate(const char* url) {
   return true;
 }
 
+bool OtaUpdater::stopUpdate() {
+  if (isBusy()) {
+    retry.reset();
+    Update.abort();
+    state = State::Idle;
+    totalSize = 0;
+    downloaded = 0;
+    lastError[0] = '\0';
+    lastProgressLogMs = 0;
+
+    return true;
+  }
+  setError("OTA não está em andamento");
+  return false;
+}
+
 bool OtaUpdater::markOk() {
   if(esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
     Serial.println("[OTA] firmware markOk — imagem atual confirmada");
@@ -224,7 +240,7 @@ bool OtaUpdater::stepDownload() {
 
   if (downloaded != totalSize) {
     Update.abort();
-    Serial.println("[OTA] download incompleto — estado salvo");
+    Serial.println("[OTA] download incompleto — update cancelado");
     return false;
   }
 

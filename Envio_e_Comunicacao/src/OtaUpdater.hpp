@@ -26,6 +26,7 @@ public:
   void setStatusCallback(StatusCallback cb);
 
   bool startUpdate(const char* firmwareUrl);
+  bool stopUpdate();
 
   bool markOk();
   bool markInvalidReboot();
