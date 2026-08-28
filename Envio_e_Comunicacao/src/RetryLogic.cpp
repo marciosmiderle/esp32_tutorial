@@ -7,7 +7,7 @@ RetryLogic::RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned lo
 
 bool RetryLogic::canRetry() {
   if (isInTryLater()) {
-    Serial.println("Aguardando tryLater expirar...");
+    //TODO: niveis de log Serial.println("Aguardando tryLater expirar...");
     return false;
   }
   

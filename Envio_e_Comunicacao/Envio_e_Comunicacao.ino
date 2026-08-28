@@ -140,13 +140,13 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   Serial.print("[COMANDO] Recebido: ");
   Serial.println(message);
 
-  // firmware update <url>
-  if (strncmp(message, "firmware update", 15) == 0) {
+  // firmware_update <url>
+  if (strncmp(message, "firmware_update", 15) == 0) {
     const char* url = message + 15;
     while (*url == ' ') ++url;
     if (*url == '\0') {
-      Serial.println("[COMANDO] Uso: firmware update <url_do_bin>");
-      mqttClient.publishEvent("ota", "uso: firmware update <url>");
+      Serial.println("[COMANDO] Uso: firmware_update <url_do_bin>");
+      mqttClient.publishEvent("ota", "uso: firmware_update <url>");
       return;
     }
     if (ota.startUpdate(url)) {
@@ -157,12 +157,22 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
     return;
   }
 
-  // firmware markOk
-  if (strcmp(message, "firmware markOk") == 0) {
+  // firmware_mark_ok
+  if (strcmp(message, "firmware_mark_ok") == 0) {
     if (ota.markOk()) {
       mqttClient.publishEvent("ota", "firmware marcado como valido");
     } else {
-      mqttClient.publishEvent("ota", "markOk falhou");
+      mqttClient.publishEvent("ota", "mark ok falhou");
+    }
+    return;
+  }
+
+  // firmware_mark_invalid_reboot
+  if (strcmp(message, "firmware_mark_invalid_reboot") == 0) {
+    if (ota.markInvalidReboot()) {
+      mqttClient.publishEvent("ota", "firmware marcado como valido, reboot");
+    } else {
+      mqttClient.publishEvent("ota", "firmware marcado como valido falhou");
     }
     return;
   }
@@ -238,12 +248,14 @@ void consoleInput() {
       }
     }
     if (comando == 'o') {
-      // ou <url>  — dispara OTA via serial (teste)
-      // om       — markOk
       comando = Serial.peek();
       if (comando == 'm') {
-        Serial.read();  // consome 'm'
+        Serial.read();
         ota.markOk();
+      }
+      if (comando == 'i') {
+        Serial.read();
+        ota.markInvalidReboot();
       }
     }
   }
@@ -270,7 +282,6 @@ void setup() {
   });
 
   Serial.println("=== Estacao Meteorologica Iniciada ===");
-  Serial.println("OTA: comandos MQTT 'firmware update <url>' e 'firmware markOk'");
   Serial.println("HTTP API: httpbin.org/post (eco)");
   Serial.println("MQTT Broker: broker.hivemq.com:1883");
   Serial.println("Topicos MQTT:");
@@ -278,6 +289,10 @@ void setup() {
   Serial.println("  - Eventos: estacao/eventos");
   Serial.println("  - Comandos (sub): estacao/comandos/entrada");
   Serial.println("  - Comandos (pub): estacao/comandos/resposta");
+  Serial.println("OTA: comandos ouvidos em estacao/comandos/entrada");
+  Serial.println("  firmware_update <url>");
+  Serial.println("  firmware_mark_ok");
+  Serial.println("  firmware_mark_invalid_reboot");
 }
 
 void loop() {

@@ -79,13 +79,14 @@ Payload de exemplo:
 
 O sistema subscreve ao tópico `estacao/comandos/entrada` e processa os seguintes comandos:
 
-| Comando    | Ação                                                   |
-|------------|--------------------------------------------------------|
-| `led_on`   | Aciona LED (simulado)                                  |
-| `led_off`  | Desliga LED (simulado)                                 |
-| `read_now` | Mostra a interpretação ambiental da estação no console |
-| `firmware update <url>` | Inicia OTA (ver seção OTA Update) |
-| `firmware markOk` | Confirma firmware atual após boot OTA |
+| Comando                        | Ação                                                   |
+|--------------------------------|--------------------------------------------------------|
+| `led_on`                       | Aciona LED (simulado)                                  |
+| `led_off`                      | Desliga LED (simulado)                                 |
+| `read_now`                     | Mostra a interpretação ambiental da estação no console |
+| `firmware_update <url>`        | Inicia OTA (ver seção OTA Update)                      |
+| `firmware_mark_ok`             | Confirma firmware atual após o update                  |
+| `firmware_mark_invalid_reboot` | Marca o update como inválido e reinicia                |
 
 Para testar, publique no broker MQTT:
 ```bash
@@ -251,10 +252,8 @@ Atualização de firmware via MQTT + HTTP, com verificação de integridade.
 
 Publique no tópico `<ClientID>/estacao/comandos/entrada`:
 
-| Comando | Ação |
-|---------|------|
-| `firmware update <url_do_bin>` | Baixa o `.bin` e o hash (`.md5` ou `.sha256` de mesmo nome), grava na partição OTA e reinicia |
-| `firmware markOk` | Confirma o firmware atual como válido após o boot |
+O comando `firmware_update <url_do_bin>` baixa o `.bin` e o hash (`.md5` ou `.sha256` de mesmo nome), grava na partição OTA e reinicia. Depois, manualmente, o comando `firmware_mark_ok` confirma o firmware atual como válido, e o `firmware_mark_invalid_reboot` marca o update como inválido fazendo o rollback e reinicia.
+
 
 Exemplo:
 
@@ -263,12 +262,17 @@ Exemplo:
 # 2) Dispare o update
 mosquitto_pub -h broker.hivemq.com \
   -t "<ClientID>/estacao/comandos/entrada" \
-  -m "firmware update https://exemplo.com/firmware.bin"
+  -m "firmware_update https://exemplo.com/firmware.bin"
 
 # 3) Após o reboot bem-sucedido
 mosquitto_pub -h broker.hivemq.com \
   -t "<ClientID>/estacao/comandos/entrada" \
-  -m "firmware markOk"
+  -m "firmware_mark_ok"
+
+# 4) Também após o reboot bem-sucedido
+mosquitto_pub -h broker.hivemq.com \
+  -t "<ClientID>/estacao/comandos/entrada" \
+  -m "firmware_mark_invalid_reboot"
 ```
 
 ## Arquivos de hash
@@ -280,15 +284,8 @@ O cliente tenta, nesta ordem:
 
 O conteúdo pode ser só o hex, ou no formato clássico `hash  nome_arquivo`.
 
-## Classe `OtaUpdater`
-
-- Mesmo estilo do restante do projeto: classe com `begin()` / `update()`, `RetryLogic`, callback de status.
-- Fluxo: `FetchingHash` → `Downloading` → verificação → `Update.end` → `ESP.restart()`.
-- Em falha de rede, URL/hash ficam em NVS (`Preferences` namespace `ota`) e o próximo ciclo (ou boot) retoma a partir do hash já conhecido.
-- Limitação da API `Update`: após `abort()` não há seek seguro na partição; o download do bin é refeito do zero, mas sem precisar baixar o hash de novo.
-
 ## Observações
 
 - É necessário partição OTA no esquema de flash (padrão Arduino-ESP32 com OTA).
-- O download do bin é síncrono dentro de `update()` (com `yield()`); firmwares grandes ocupam o loop por alguns segundos.
+- O download do bin é síncrono dentro de `update()`; firmwares grandes ocupam o loop por alguns segundos.
 - Eventos de progresso/erro também vão para o tópico de eventos MQTT (`type: ota`).
