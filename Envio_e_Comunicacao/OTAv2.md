@@ -57,8 +57,8 @@
 # Notas
 
 [^OtaUpdater]: Classe reponsável por atualizar e validar o firmware junto com o usuário.
-[^WatchDog  ]: Classe responsável por reiniciar o sistema caso ele fique sem responder ou preso numa função.
-[^NetworkManager  ]: Classe responsável por manter uma conexão com a internet e abstrair o tipo (WiFi, celular)
-[^Requisito ]: Requisito funcional.
-[^Restrição ]: Requisito não-funcional.
-[^Qualidade ]: Requisito não-funcional.
+[^WatchDog]: Classe responsável por reiniciar o sistema caso ele fique sem responder ou preso numa função.
+[^NetworkManager]: Classe responsável por manter uma conexão com a internet e abstrair o tipo (WiFi, celular)
+[^Requisito]: Requisito funcional.
+[^Restrição]: Requisito não-funcional.
+[^Qualidade]: Requisito não-funcional.
