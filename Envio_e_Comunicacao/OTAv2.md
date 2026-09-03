@@ -118,6 +118,7 @@ Depois de um upgrade temos numa partição o app antigo, marcado como válido, e
 - **RF-08** Deve publicar status no tópico de eventos MQTT: `downloading`, `verifying`, `pending_ok`, `success`, `failed`, `rollback`.
 - **RF-09** Deve expor versão/firmware-id legível no boot (Serial + evento MQTT).
 - **RF-10** O OTA deve funcionar independentemente do meio de rede (abstração `NetworkManager` / interface de conectividade).
+- **RF-11** Deve ser possível monitorar o bom funcionamento do sistema através de ferramentas padronizadas.
 
 # Requisitos Não-Funcionais Consolidados (RNF)
 
