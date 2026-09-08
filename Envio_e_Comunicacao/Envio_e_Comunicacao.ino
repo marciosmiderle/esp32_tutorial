@@ -1,3 +1,5 @@
+#include "src/WatchDog.hpp"
+
 #include "src/Controls.hpp"
 
 #include "src/NtcSensor.hpp"
@@ -60,6 +62,12 @@ OtaUpdater ota;
 Message currentMessage;
 unsigned long lastSendTime = 0;
 const unsigned long SEND_INTERVAL_MS = 10000;  // Envia a cada 10 segundos
+
+WatchDog wdg(5000);
+
+void setupWatchDog() {
+  wdg.begin();
+}
 
 void setupNtc() {
   ntc.begin(NTC_PIN);
@@ -273,6 +281,7 @@ void consoleInput() {
 void setup() {
   Serial.begin(115200);
 
+  setupWatchDog();
   setupNtc();
   setupDht();
   setupPir();
@@ -342,4 +351,6 @@ void loop() {
       }
     }
   }
+
+  wdg.feed();
 }
