@@ -1,3 +1,4 @@
+#include "src/LoggerSerial.hpp"
 #include "src/WatchDog.hpp"
 
 #include "src/Controls.hpp"
@@ -17,9 +18,13 @@
 #include "src/WiFiManager.hpp"
 
 #include "src/Message.hpp"
-#include "src/HttpClient.hpp"
+#include "src/HttpClientLocal.hpp"
 #include "src/MqttClient.hpp"
 #include "src/OtaUpdater.hpp"
+
+#include "src/Logger.hpp"
+#include "src/LoggerMqtt.hpp"
+#include "src/LoggerSerial.hpp"
 
 const uint8_t NTC_PIN     = 34;
 const uint8_t NTC_BTN_PIN = 27;
@@ -42,7 +47,7 @@ EstacaoView estView(&est);
 
 // Configurações da API HTTP
 const char* API_URL = "http://httpbin.org/post";  // API de teste que ecoa o payload
-HttpClient httpClient(API_URL);
+HttpClientLocal httpClient(API_URL);
 
 // Configurações do Broker MQTT
 const char* MQTT_BROKER = "broker.hivemq.com";  // Broker público HiveMQ
@@ -50,12 +55,14 @@ const int MQTT_PORT = 1883;
 const char* MQTT_CLIENT_ID = "estacao_meteorologica_001";
 const char* MQTT_TELEMETRY_TOPIC = "estacao/telemetria";
 const char* MQTT_EVENT_TOPIC = "estacao/eventos";
+const char* MQTT_LOGS_TOPIC = "estacao/logs";
 const char* MQTT_COMMAND_TOPIC = "estacao/comandos/resposta";
 const char* MQTT_COMMAND_SUBSCRIBE_TOPIC = "estacao/comandos/entrada";
 
 MqttClient mqttClient(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID,
                       MQTT_TELEMETRY_TOPIC, MQTT_EVENT_TOPIC,
-                      MQTT_COMMAND_TOPIC, MQTT_COMMAND_SUBSCRIBE_TOPIC);
+                      MQTT_COMMAND_TOPIC, MQTT_COMMAND_SUBSCRIBE_TOPIC,
+                      MQTT_LOGS_TOPIC);
 
 OtaUpdater ota;
 
@@ -67,6 +74,14 @@ WatchDog wdg(5000);
 
 void setupWatchDog() {
   wdg.begin();
+}
+
+LoggerSerial logToSer0(Serial);
+LoggerMqtt   logToMqtt(mqttClient);
+Logger Log(&logToMqtt, &logToSer0);
+
+void setupLogger() {
+
 }
 
 void setupNtc() {
@@ -107,14 +122,14 @@ void setupDht() {
 void setupPir() {
   pir.begin(PIR_PIN);
   pirView.model = &pir;
-  pir.motionStartEvent = []() { 
-    est.consolida(); 
+  pir.motionStartEvent = []() {
+    est.consolida();
     // Publica evento de movimento detectado
     if (mqttClient.isConnected()) {
       mqttClient.publishEvent("motion_start", "Movimento detectado");
     }
   };
-  pir.motionStopEvent = []() { 
+  pir.motionStopEvent = []() {
     est.consolida();
     // Publica evento de movimento cessado
     if (mqttClient.isConnected()) {
@@ -129,14 +144,14 @@ WiFiManager wif;
 
 void setupWiFi() {
   wif.begin();
-  wif.connectingEvent      = []() { Serial.println("wif.connectingEvent"); };
+  wif.connectingEvent      = []() { Log.println("wif.connectingEvent"); };
   wif.connectedEvent = []() {
-    Serial.print("wif.connectedEvent ");
-    Serial.println(WiFi.localIP());  
-  };  
-  wif.connectionLostEvent  = []() { Serial.println("wif.connectionLostEvent"); };
-  wif.disconnectionEvent   = []() { Serial.println("wif.disconnectionEvent"); };
-  wif.connectionStopEvent  = []() { Serial.println("wif.connectionStopEvent"); };
+    Log.print("wif.connectedEvent ");
+    Log.println(WiFi.localIP());
+  };
+  wif.connectionLostEvent  = []() { Log.println("wif.connectionLostEvent"); };
+  wif.disconnectionEvent   = []() { Log.println("wif.disconnectionEvent"); };
+  wif.connectionStopEvent  = []() { Log.println("wif.connectionStopEvent"); };
 }
 
 // Callback para comandos MQTT recebidos
@@ -145,8 +160,8 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   memcpy(message, payload, length);
   message[length] = '\0';
 
-  Serial.print("[COMANDO] Recebido: ");
-  Serial.println(message);
+  Log.print("[COMANDO] Recebido: ");
+  Log.println(message);
 
   if (strcmp(message, "firmware_update_stop") == 0) {
     if (ota.stopUpdate()) {
@@ -162,7 +177,7 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
     const char* url = message + 15;
     while (*url == ' ') ++url;
     if (*url == '\0') {
-      Serial.println("[COMANDO] Uso: firmware_update <url_do_bin>");
+      Log.println("[COMANDO] Uso: firmware_update <url_do_bin>");
       mqttClient.publishEvent("ota", "uso: firmware_update <url>");
       return;
     }
@@ -195,15 +210,15 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   }
 
   if (strcmp(message, "led_on") == 0) {
-    Serial.println("[COMANDO] Acionando LED (simulado)");
+    Log.println("[COMANDO] Acionando LED (simulado)");
   } else if (strcmp(message, "led_off") == 0) {
-    Serial.println("[COMANDO] Desligando LED (simulado)");
+    Log.println("[COMANDO] Desligando LED (simulado)");
   } else if (strcmp(message, "read_now") == 0) {
-    Serial.println("[COMANDO] Mostrando a leitura ambiental atual da estação");
+    Log.println("[COMANDO] Mostrando a leitura ambiental atual da estação");
     estView.invalidate();
   } else {
-    Serial.print("[COMANDO] Comando desconhecido: ");
-    Serial.println(message);
+    Log.print("[COMANDO] Comando desconhecido: ");
+    Log.println(message);
   }
 }
 
@@ -282,35 +297,37 @@ void setup() {
   Serial.begin(115200);
 
   setupWatchDog();
+  setupLogger();
   setupNtc();
   setupDht();
   setupPir();
   setupEst();
   setupWiFi();
-  
+
   // Configura callback MQTT
   mqttClient.setCallback(mqttCommandCallback);
 
   ota.begin();
   ota.setStatusCallback([](OtaUpdater::State s, const char* detail) {
     if (s == OtaUpdater::State::Failed) {
-      Serial.print("[OTA][cb] falha: ");
-      Serial.println(detail);
+      Log.print("[OTA][cb] falha: ");
+      Log.println(detail);
     }
   });
 
-  Serial.println("=== Estacao Meteorologica Iniciada ===");
-  Serial.println("HTTP API: httpbin.org/post (eco)");
-  Serial.println("MQTT Broker: broker.hivemq.com:1883");
-  Serial.println("Topicos MQTT:");
-  Serial.println("  - Telemetria: estacao/telemetria");
-  Serial.println("  - Eventos: estacao/eventos");
-  Serial.println("  - Comandos (sub): estacao/comandos/entrada");
-  Serial.println("  - Comandos (pub): estacao/comandos/resposta");
-  Serial.println("OTA: comandos ouvidos em estacao/comandos/entrada");
-  Serial.println("  firmware_update <url>");
-  Serial.println("  firmware_mark_ok");
-  Serial.println("  firmware_mark_invalid_reboot");
+  Log.println("=== Estacao Meteorologica Iniciada ===");
+  Log.println("HTTP API: httpbin.org/post (eco)");
+  Log.println("MQTT Broker: broker.hivemq.com:1883");
+  Log.println("Topicos MQTT:");
+  Log.println("  - Telemetria: estacao/telemetria");
+  Log.println("  - Logs:       estacao/logs");
+  Log.println("  - Eventos:    estacao/eventos");
+  Log.println("  - Comandos (sub): estacao/comandos/entrada");
+  Log.println("  - Comandos (pub): estacao/comandos/resposta");
+  Log.println("OTA: comandos ouvidos em estacao/comandos/entrada");
+  Log.println("  firmware_update <url>");
+  Log.println("  firmware_mark_ok");
+  Log.println("  firmware_mark_invalid_reboot");
 }
 
 void loop() {
@@ -327,7 +344,7 @@ void loop() {
   dhtView.render();
   pirView.render();
   estView.render();
-  
+
   // Envia dados para HTTP e MQTT periodicamente
   if (!wif.isConnected()) {
     return;
@@ -335,22 +352,23 @@ void loop() {
     unsigned long currentTime = millis();
     if (currentTime - lastSendTime >= SEND_INTERVAL_MS) {
       lastSendTime = currentTime;
-    
+
       // Constrói mensagem única (sem duplicação de código)
       currentMessage.buildFrom(est);
-    
+
       // Envia por HTTP (com retry automático)
       httpClient.send(currentMessage);
-    
+
       // Publica por MQTT (com reconexão automática)
       if (mqttClient.isConnected()) {
-        Serial.println("\n--- Publicando via MQTT ---");
+        Log.println("\n--- Publicando via MQTT ---");
         mqttClient.publishTelemetry(currentMessage);
       } else {
-        Serial.println("\n[MQTT] Ainda nao conectado (update() esta tentando)");
+        Log.println("\n[MQTT] Ainda nao conectado (update() esta tentando)");
       }
     }
   }
 
   wdg.feed();
+  Log.update();
 }

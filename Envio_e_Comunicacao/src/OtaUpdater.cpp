@@ -33,7 +33,9 @@ void OtaUpdater::setState(State s, const char* detail) {
   switch (s) {
     case State::Idle:         Serial.print("Idle"); break;
     case State::FetchingHash: Serial.print("FetchingHash"); break;
+    case State::StartDownload:  Serial.print("Start Download"); break;
     case State::Downloading:  Serial.print("Downloading"); break;
+    case State::DownloadValid:  Serial.print("Download Valid"); break;
     case State::Success:      Serial.print("Success"); break;
     case State::Failed:       Serial.print("Failed"); break;
   }
@@ -132,7 +134,7 @@ bool OtaUpdater::stepFetchHash() {
   Serial.print("[OTA] GET ");
   Serial.println(urlMd5);
   http.begin(urlMd5);
-  http.setTimeout(10000);
+  http.setTimeout(1000);
   int code = http.GET();
   String body;
 
@@ -145,7 +147,7 @@ bool OtaUpdater::stepFetchHash() {
     Serial.print("[OTA] GET ");
     Serial.println(urlSha);
     http.begin(urlSha);
-    http.setTimeout(10000);
+    http.setTimeout(1000);
     code = http.GET();
     if (code == 200) {
       body = http.getString();
@@ -165,7 +167,7 @@ bool OtaUpdater::stepFetchHash() {
   sum.begin();
 
   retry.reset();
-  setState(State::Downloading, "hash ok");
+  setState(State::StartDownload, "hash ok");
   return true;
 }
 
@@ -203,7 +205,7 @@ bool OtaUpdater::stepDownload() {
     return false;
   }
 
-  WiFiClient* stream = http.getStreamPtr();
+  NetworkClient* stream = http.getStreamPtr();
   uint8_t buf[kChunkSize];
 
   while (http.connected() && downloaded < totalSize) {
@@ -282,10 +284,32 @@ void OtaUpdater::update() {
     return;
   }
 
+  if (state == State::StartDownload) {
+    if (!startDownload()) {
+      // TODO: tratar erro
+    }
+    return;
+  }
+
   if (state == State::Downloading) {
     if (stepDownload()) {
       // reinicia no sucesso
     }
     return;
   }
+
+  if (state == State::DownloadValid) {
+    if (downloadValid()) {
+      // TODO: tratar erro
+    }
+    return;
+  }
+}
+
+bool OtaUpdater::startDownload() {
+  return true;
+}
+
+bool OtaUpdater::downloadValid() {
+  return true;
 }

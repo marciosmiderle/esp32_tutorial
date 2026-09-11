@@ -6,11 +6,13 @@ MqttClient* MqttClient::instance = nullptr;
 MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
                        const char* _telemetryTopic, const char* _eventTopic,
                        const char* _commandTopic, const char* _commandSubscribeTopic,
+                       const char* _logTopic,
                        int maxRetries, unsigned long retryTimeoutMs,
                        unsigned long tryLaterTimeoutMs)
   : broker(_broker), port(_port), clientId(_clientId),
     telemetryTopic(_telemetryTopic), eventTopic(_eventTopic),
     commandTopic(_commandTopic), commandSubscribeTopic(_commandSubscribeTopic),
+    logTopic(_logTopic),
     retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs),
     connected(false), userCallback(nullptr) {
 
@@ -64,7 +66,10 @@ bool MqttClient::connect() {
   Serial.println(resolvedClientId);
 
   // cleanSession=true: re-subscribe sempre após connect
-  bool success = client.connect(resolvedClientId);
+  bool success = client
+    .setKeepAlive(180)
+    .setSocketTimeout(180)
+    .connect(resolvedClientId);
 
   if (success) {
     Serial.println("[MQTT] Conectado");
@@ -176,6 +181,19 @@ bool MqttClient::publishEvent(const char* eventType, const char* eventData) {
     connected = false;
   }
   return success;
+}
+
+bool MqttClient::publishLog(const char* data, size_t length) {
+  if (!ensureConnection()) {
+    //Serial.println("[MQTT] publishLog: sem conexao");
+    return false;
+  }
+
+  String rlogTopic(resolvedClientId);
+  rlogTopic.concat("/");
+  rlogTopic.concat(logTopic);
+
+  return client.publish(rlogTopic.c_str(), reinterpret_cast<const uint8_t*>(data), length, false);
 }
 
 void MqttClient::setCallback(MqttCallback callback) {

@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include "RetryLogic.hpp"
 
 RetryLogic::RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned long tryLaterTimeoutMs)

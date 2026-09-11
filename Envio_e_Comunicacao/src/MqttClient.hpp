@@ -14,6 +14,7 @@ public:
   MqttClient(const char* broker, int port, const char* clientId,
              const char* telemetryTopic, const char* eventTopic,
              const char* commandTopic, const char* commandSubscribeTopic,
+             const char* _logTopic,
              int maxRetries = 5, unsigned long retryTimeoutMs = 3000,
              unsigned long tryLaterTimeoutMs = 30000);
 
@@ -21,6 +22,7 @@ public:
   void disconnect();
   bool publishTelemetry(const Message& message);
   bool publishEvent(const char* eventType, const char* eventData);
+  bool publishLog(const char* data, size_t length);
   void setCallback(MqttCallback callback);
   void update();
   bool isConnected();
@@ -36,6 +38,7 @@ private:
   const char* eventTopic;
   const char* commandTopic;
   const char* commandSubscribeTopic;
+  const char* logTopic;
   RetryLogic retry;
   bool connected;
   MqttCallback userCallback;

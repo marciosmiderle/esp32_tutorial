@@ -11,7 +11,9 @@ public:
   enum class State {
     Idle,
     FetchingHash,
+    StartDownload,
     Downloading,
+    DownloadValid,
     Success,
     Failed
   };
@@ -65,5 +67,7 @@ private:
   bool loadPending();
 
   bool stepFetchHash();
+  bool startDownload();
   bool stepDownload();
+  bool downloadValid();
 };
