@@ -1,4 +1,5 @@
 #include "WatchDog.hpp"
+#include "Logger.hpp"
 #include <Arduino.h>
 #include <esp_task_wdt.h>
 
@@ -20,7 +21,7 @@ void WatchDog::begin() {
     err = esp_task_wdt_init(&twdt_config);
     esp_err_t err = esp_task_wdt_init(&twdt_config);
     if (err != ESP_OK) {
-      Serial.println("[WatchDog] ERRO ao inicializar o WDT nativo");
+      Log.println("[WatchDog] ERRO ao inicializar o WDT nativo");
       return;
     }
   }
@@ -28,11 +29,11 @@ void WatchDog::begin() {
   // 2. Registra a Task atual (a task do loop principal) no Watchdog
   err = esp_task_wdt_add(nullptr);
   if (err != ESP_OK) {
-    Serial.println("[WatchDog] ERRO ao registrar a task no WDT");
+    Log.println("[WatchDog] ERRO ao registrar a task no WDT");
     return;
   }
 
-  Serial.printf("[WatchDog] Iniciado nativamente — Timeout: %lu ms\n", this->timeout_ms);
+  Log.printf("[WatchDog] Iniciado nativamente — Timeout: %lu ms\n", this->timeout_ms);
 }
 
 void WatchDog::feed() {

@@ -1,4 +1,5 @@
 #include "OtaUpdater.hpp"
+#include "Logger.hpp"
 
 #include <Update.h>
 #include <WiFi.h>
@@ -29,21 +30,21 @@ void OtaUpdater::setState(State s, const char* detail) {
   if (statusCb) {
     statusCb(s, detail ? detail : "");
   }
-  Serial.print("[OTA] ");
+  Log.print("[OTA] ");
   switch (s) {
-    case State::Idle:         Serial.print("Idle"); break;
-    case State::FetchingHash: Serial.print("FetchingHash"); break;
-    case State::StartDownload:  Serial.print("Start Download"); break;
-    case State::Downloading:  Serial.print("Downloading"); break;
-    case State::DownloadValid:  Serial.print("Download Valid"); break;
-    case State::Success:      Serial.print("Success"); break;
-    case State::Failed:       Serial.print("Failed"); break;
+    case State::Idle:          Log.print("Idle"); break;
+    case State::FetchingHash:  Log.print("FetchingHash"); break;
+    case State::StartDownload: Log.print("Start Download"); break;
+    case State::Downloading:   Log.print("Downloading"); break;
+    case State::DownloadValid: Log.print("Download Valid"); break;
+    case State::Success:       Log.print("Success"); break;
+    case State::Failed:        Log.print("Failed"); break;
   }
   if (detail && detail[0]) {
-    Serial.print(" | ");
-    Serial.print(detail);
+    Log.print(" | ");
+    Log.print(detail);
   }
-  Serial.println();
+  Log.println();
 }
 
 void OtaUpdater::setError(const char* msg) {
@@ -98,20 +99,20 @@ bool OtaUpdater::stopUpdate() {
 
 bool OtaUpdater::markOk() {
   if(esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
-    Serial.println("[OTA] firmware markOk — imagem atual confirmada");
+    Log.println("[OTA] firmware markOk — imagem atual confirmada");
     setState(State::Success, "markOk");
   } else {
-    Serial.println("[OTA] erro em markOk");
+    Log.println("[OTA] erro em markOk");
   }
   return true;
 }
 
 bool OtaUpdater::markInvalidReboot() {
   if (esp_ota_mark_app_invalid_rollback_and_reboot() == ESP_OK) {
-    Serial.println("[OTA] firmware invalid, rollback e reboot");
+    Log.println("[OTA] firmware invalid, rollback e reboot");
     setState(State::Success, "markInvalidReboot");
   } else {
-    Serial.println("[OTA] erro em markInvalidReboot");
+    Log.println("[OTA] erro em markInvalidReboot");
   }
   return true;
 }
@@ -131,8 +132,8 @@ bool OtaUpdater::stepFetchHash() {
   String urlMd5 = CheckSum::deriveHashUrl(firmwareUrl, false);
   String urlSha = CheckSum::deriveHashUrl(firmwareUrl, true);
 
-  Serial.print("[OTA] GET ");
-  Serial.println(urlMd5);
+  Log.print("[OTA] GET ");
+  Log.println(urlMd5);
   http.begin(urlMd5);
   http.setTimeout(1000);
   int code = http.GET();
@@ -144,8 +145,8 @@ bool OtaUpdater::stepFetchHash() {
   http.end();
 
   if (code != 200) {
-    Serial.print("[OTA] GET ");
-    Serial.println(urlSha);
+    Log.print("[OTA] GET ");
+    Log.println(urlSha);
     http.begin(urlSha);
     http.setTimeout(1000);
     code = http.GET();
@@ -156,7 +157,7 @@ bool OtaUpdater::stepFetchHash() {
   }
 
   if (code != 200) {
-    Serial.printf("[OTA] hash HTTP %d\n", code);
+    Log.printf("[OTA] hash HTTP %d\n", code);
     return false;
   }
 
@@ -181,11 +182,11 @@ bool OtaUpdater::stepDownload() {
   http.setTimeout(20000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-  Serial.print("[OTA] GET ");
-  Serial.println(firmwareUrl);
+  Log.print("[OTA] GET ");
+  Log.println(firmwareUrl);
   int code = http.GET();
   if (code != 200 && code != 206) {
-    Serial.printf("[OTA] firmware HTTP %d\n", code);
+    Log.printf("[OTA] firmware HTTP %d\n", code);
     http.end();
     return false;
   }
@@ -201,7 +202,7 @@ bool OtaUpdater::stepDownload() {
   if (!Update.begin(totalSize, U_FLASH)) {
     http.end();
     setError("Update.begin falhou");
-    Update.printError(Serial);
+    Update.printError(Log);
     return false;
   }
 
@@ -222,7 +223,7 @@ bool OtaUpdater::stepDownload() {
       http.end();
       Update.abort();
       setError("Update.write falhou");
-      Update.printError(Serial);
+      Update.printError(Log);
       return false;
     }
 
@@ -232,7 +233,7 @@ bool OtaUpdater::stepDownload() {
 
     if (millis() - lastProgressLogMs >= 1000) {
       lastProgressLogMs = millis();
-      Serial.printf("[OTA] %7.0u / %7.0u (%2.0f%%)\n",
+      Log.printf("[OTA] %7.0u / %7.0u (%2.0f%%)\n",
                     (unsigned)downloaded, (unsigned)totalSize,
                     getProgress() * 100.0f);
     }
@@ -242,30 +243,30 @@ bool OtaUpdater::stepDownload() {
 
   if (downloaded != totalSize) {
     Update.abort();
-    Serial.println("[OTA] download incompleto — update cancelado");
+    Log.println("[OTA] download incompleto — update cancelado");
     return false;
   }
 
   if (!Update.end(true)) {
     setError("Update.end falhou");
-    Update.printError(Serial);
+    Update.printError(Log);
     return false;
   }
 
   String actual = sum.getDigest();
 
-  Serial.print("[OTA] hash calculado: ");
-  Serial.println(actual);
+  Log.print("[OTA] hash calculado: ");
+  Log.println(actual);
 
   if (actual != sum.getExpectedHash()) {
     setError("Integridade falhou (hash)");
-    Serial.printf("[OTA] hash calculado = '%s'\n", actual.c_str());
-    Serial.printf("[OTA] hash esperado  = '%s'\n", sum.getExpectedHash().c_str());
+    Log.printf("[OTA] hash calculado = '%s'\n", actual.c_str());
+    Log.printf("[OTA] hash esperado  = '%s'\n", sum.getExpectedHash().c_str());
     return false;
   }
 
   setState(State::Success, "ok — reiniciando");
-  Serial.println("[OTA] Sucesso. Reinicio em 1s. Envie 'firmware markOk' apos boot se tudo estiver ok.");
+  Log.println("[OTA] Sucesso. Reinicio em 1s. Envie 'firmware markOk' apos boot se tudo estiver ok.");
   delay(1000);
   ESP.restart();
   return true;

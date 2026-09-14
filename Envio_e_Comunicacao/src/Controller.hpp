@@ -18,7 +18,7 @@ public:
   void buttonReleased()
   {
     model->enableSampling();
-    Serial.println("NTC !");
+    Log.println("NTC !");
   }
 
   void processInput()

@@ -78,10 +78,10 @@ void setupWatchDog() {
 
 LoggerSerial logToSer0(Serial);
 LoggerMqtt   logToMqtt(mqttClient);
-Logger Log(&logToMqtt, &logToSer0);
 
 void setupLogger() {
-
+  Log.addLogger(&logToSer0);
+  Log.addLogger(&logToMqtt);
 }
 
 void setupNtc() {
@@ -279,6 +279,7 @@ void consoleInput() {
         mqttClient.publishTelemetry(currentMessage);
       }
     }
+
     if (comando == 'o') {
       comando = Serial.peek();
       if (comando == 'm') {
@@ -288,6 +289,16 @@ void consoleInput() {
       if (comando == 'i') {
         Serial.read();
         ota.markInvalidReboot();
+      }
+    }
+
+    if (comando == 'l') {
+      comando = Serial.peek();
+      if (comando == 's') {
+        Log.enable();
+      }
+      if (comando == 'f') {
+        Log.disable();
       }
     }
   }

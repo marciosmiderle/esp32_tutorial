@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "RetryLogic.hpp"
+#include "Logger.hpp"
 
 RetryLogic::RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned long tryLaterTimeoutMs)
     : maxRetries(maxRetries),
@@ -8,17 +9,17 @@ RetryLogic::RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned lo
 
 bool RetryLogic::canRetry() {
   if (isInTryLater()) {
-    //TODO: niveis de log Serial.println("Aguardando tryLater expirar...");
+    //TODO: niveis de log Log.println("Aguardando tryLater expirar...");
     return false;
   }
   
   if (tryLaterExpired()) {
-    Serial.println("TryLater expirado, resetando retries");
+    Log.println("TryLater expirado, resetando retries");
     reset();
   }
 
   if (!hasRetriesLeft()) {
-    Serial.println("Sem mais retries, entrando no tryLater");
+    Log.println("Sem mais retries, entrando no tryLater");
     enterTryLater();
     return false;
   }

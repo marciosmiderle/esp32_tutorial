@@ -1,4 +1,5 @@
 #include "CheckSum.hpp"
+#include "Logger.hpp"
 
 void CheckSum::begin() {
   if (useSha256) {
@@ -36,7 +37,7 @@ bool CheckSum::parseHash(String& body) {
   if (!parseHashBody(body)) {
     return false;
   }
-  Serial.printf("[OTA] hash (%s): %s\n", useSha256 ? "sha256" : "md5",
+  Log.printf("[OTA] hash (%s): %s\n", useSha256 ? "sha256" : "md5",
 		expectedHash.c_str());
   return true;
 }

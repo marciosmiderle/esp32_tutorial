@@ -1,4 +1,5 @@
 #include "HttpClientLocal.hpp"
+#include "Logger.hpp"
 
 HttpClientLocal::HttpClientLocal(const char* _apiUrl, int maxRetries, 
                        unsigned long retryTimeoutMs, 
@@ -7,7 +8,7 @@ HttpClientLocal::HttpClientLocal(const char* _apiUrl, int maxRetries,
 
 bool HttpClientLocal::send(const Message &message) {
   if (!retry.canRetry()) {
-    Serial.println("[MQTT] retry não permite iniciar");
+    Log.println("[MQTT] retry não permite iniciar");
     return false;
   }
 
@@ -30,11 +31,11 @@ bool HttpClientLocal::performRequest(const Message& message) {
   http.begin(apiUrl);
   http.addHeader("Content-Type", "application/json");
   
-  Serial.print("[HTTP] Enviando POST para ");
-  Serial.print(apiUrl);
-  Serial.print(" Payload: ");
-  Serial.print(jsonPayload.length());
-  Serial.println(" bytes");
+  Log.print("[HTTP] Enviando POST para ");
+  Log.print(apiUrl);
+  Log.print(" Payload: ");
+  Log.print(jsonPayload.length());
+  Log.println(" bytes");
   
   int httpResponseCode = http.POST(jsonPayload);
   
@@ -43,18 +44,18 @@ bool HttpClientLocal::performRequest(const Message& message) {
   
   if (httpResponseCode > 0) {
     response = http.getString();
-    Serial.print("[HTTP] Response code: ");
-    Serial.print(httpResponseCode);
-    Serial.print(" Response: ");
-    Serial.print(response.length());
-    Serial.println(" bytes");
+    Log.print("[HTTP] Response code: ");
+    Log.print(httpResponseCode);
+    Log.print(" Response: ");
+    Log.print(response.length());
+    Log.println(" bytes");
     
     if (httpResponseCode == 200 || httpResponseCode == 201) {
       success = true;
     }
   } else {
-    Serial.print("[HTTP] Erro na requisição: ");
-    Serial.println(httpResponseCode);
+    Log.print("[HTTP] Erro na requisição: ");
+    Log.println(httpResponseCode);
     response = "Erro HTTP: " + String(httpResponseCode);
   }
   
@@ -68,11 +69,11 @@ void HttpClientLocal::logResult(bool success, const String& response) {
   lastResponse = response;
   
   if (success) {
-    Serial.println("[HTTP] Requisição bem-sucedida");
+    Log.println("[HTTP] Requisição bem-sucedida");
   } else {
-    Serial.print("[HTTP] Requisição falhou");
-    Serial.print(" Resposta: ");
-    Serial.println(response.length());
+    Log.print("[HTTP] Requisição falhou");
+    Log.print(" Resposta: ");
+    Log.println(response.length());
   }
 }
 

@@ -1,4 +1,5 @@
 #include "MqttClient.hpp"
+#include "Logger.hpp"
 #include <ArduinoJson.h>
 
 MqttClient* MqttClient::instance = nullptr;
@@ -58,12 +59,12 @@ bool MqttClient::connect() {
     return false;
   }
 
-  Serial.print("[MQTT] Conectando a ");
-  Serial.print(broker);
-  Serial.print(":");
-  Serial.print(port);
-  Serial.print(" como ");
-  Serial.println(resolvedClientId);
+  Log.print("[MQTT] Conectando a ");
+  Log.print(broker);
+  Log.print(":");
+  Log.print(port);
+  Log.print(" como ");
+  Log.println(resolvedClientId);
 
   // cleanSession=true: re-subscribe sempre após connect
   bool success = client
@@ -72,17 +73,17 @@ bool MqttClient::connect() {
     .connect(resolvedClientId);
 
   if (success) {
-    Serial.println("[MQTT] Conectado");
+    Log.println("[MQTT] Conectado");
 
     String cmdTopic(resolvedClientId);
     cmdTopic.concat("/");
     cmdTopic.concat(commandSubscribeTopic);
     if (client.subscribe(cmdTopic.c_str(), 1)) {
-      Serial.print("[MQTT] Subscrito: ");
-      Serial.println(cmdTopic);
+      Log.print("[MQTT] Subscrito: ");
+      Log.println(cmdTopic);
     } else {
-      Serial.print("[MQTT] Falha subscribe: ");
-      Serial.println(cmdTopic);
+      Log.print("[MQTT] Falha subscribe: ");
+      Log.println(cmdTopic);
     }
 
     retry.reset();
@@ -90,8 +91,8 @@ bool MqttClient::connect() {
     return true;
   }
 
-  Serial.print("[MQTT] Falha connect, state=");
-  Serial.println(client.state());
+  Log.print("[MQTT] Falha connect, state=");
+  Log.println(client.state());
   connected = false;
   return false;
 }
@@ -102,7 +103,7 @@ void MqttClient::disconnect() {
   }
   connected = false;
   retry.reset();
-  Serial.println("[MQTT] Desconectado");
+  Log.println("[MQTT] Desconectado");
 }
 
 bool MqttClient::ensureConnection() {
@@ -116,24 +117,24 @@ bool MqttClient::ensureConnection() {
 
 bool MqttClient::publishTelemetry(const Message& message) {
   if (!ensureConnection()) {
-    Serial.println("[MQTT] publishTelemetry: sem conexao");
+    Log.println("[MQTT] publishTelemetry: sem conexao");
     return false;
   }
 
   String jsonPayload = message.toJson();
   if (jsonPayload.length() + 16 > client.getBufferSize()) {
-    Serial.println("[MQTT] Payload maior que o buffer MQTT");
+    Log.println("[MQTT] Payload maior que o buffer MQTT");
     return false;
   }
 
   String telTopic(resolvedClientId);
   telTopic.concat("/");
   telTopic.concat(telemetryTopic);
-  Serial.print("[MQTT] PUB ");
-  Serial.print(telTopic);
-  Serial.print(" (");
-  Serial.print(jsonPayload.length());
-  Serial.print(" B) ");
+  Log.print("[MQTT] PUB ");
+  Log.print(telTopic);
+  Log.print(" (");
+  Log.print(jsonPayload.length());
+  Log.print(" B) ");
 
   client.loop();
   // QoS 1: pelo menos uma entrega no broker
@@ -141,9 +142,9 @@ bool MqttClient::publishTelemetry(const Message& message) {
   client.loop();
 
   if (success) {
-    Serial.println("OK");
+    Log.println("OK");
   } else {
-    Serial.println("FALHA");
+    Log.println("FALHA");
     connected = false;
   }
   return success;
@@ -151,7 +152,7 @@ bool MqttClient::publishTelemetry(const Message& message) {
 
 bool MqttClient::publishEvent(const char* eventType, const char* eventData) {
   if (!ensureConnection()) {
-    Serial.println("[MQTT] publishEvent: sem conexao");
+    Log.println("[MQTT] publishEvent: sem conexao");
     return false;
   }
 
@@ -166,18 +167,18 @@ bool MqttClient::publishEvent(const char* eventType, const char* eventData) {
   String eveTopic(resolvedClientId);
   eveTopic.concat("/");
   eveTopic.concat(eventTopic);
-  Serial.print("[MQTT] EVT ");
-  Serial.print(eveTopic);
-  Serial.print(" ");
+  Log.print("[MQTT] EVT ");
+  Log.print(eveTopic);
+  Log.print(" ");
 
   client.loop();
   bool success = client.publish(eveTopic.c_str(), jsonPayload.c_str(), false);
   client.loop();
 
   if (success) {
-    Serial.println("OK");
+    Log.println("OK");
   } else {
-    Serial.println("FALHA");
+    Log.println("FALHA");
     connected = false;
   }
   return success;
@@ -185,7 +186,7 @@ bool MqttClient::publishEvent(const char* eventType, const char* eventData) {
 
 bool MqttClient::publishLog(const char* data, size_t length) {
   if (!ensureConnection()) {
-    //Serial.println("[MQTT] publishLog: sem conexao");
+    //Log.println("[MQTT] publishLog: sem conexao");
     return false;
   }
 
@@ -207,16 +208,16 @@ void MqttClient::mqttCallbackWrapper(char* topic, byte* payload, unsigned int le
 }
 
 void MqttClient::handleCommand(char* topic, byte* payload, unsigned int length) {
-  Serial.print("[MQTT] CMD ");
-  Serial.print(topic);
-  Serial.print(": ");
+  Log.print("[MQTT] CMD ");
+  Log.print(topic);
+  Log.print(": ");
 
   // Cópia segura
   char message[128];
   unsigned int n = length < sizeof(message) - 1 ? length : sizeof(message) - 1;
   memcpy(message, payload, n);
   message[n] = '\0';
-  Serial.println(message);
+  Log.println(message);
 
   if (userCallback) {
     userCallback(topic, payload, length);
