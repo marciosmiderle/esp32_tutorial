@@ -76,12 +76,14 @@ void setupWatchDog() {
   wdg.begin();
 }
 
-LoggerSerial logToSer0(Serial);
-LoggerMqtt   logToMqtt(mqttClient);
+LoggerSerial* logToSer0 = nullptr;
+LoggerMqtt*   logToMqtt = nullptr;
 
 void setupLogger() {
-  Log.addLogger(&logToSer0);
-  Log.addLogger(&logToMqtt);
+  logToSer0 = new LoggerSerial(Serial);
+  logToMqtt = new LoggerMqtt(mqttClient);
+  Log.addLogger(logToSer0);
+  Log.addLogger(logToMqtt);
 }
 
 void setupNtc() {
@@ -293,12 +295,29 @@ void consoleInput() {
     }
 
     if (comando == 'l') {
-      comando = Serial.peek();
-      if (comando == 's') {
-        Log.enable();
-      }
-      if (comando == 'f') {
-        Log.disable();
+      String tp = "Logger";
+      LoggerBase* obj = &Log;
+      if (Serial.available() > 0) {
+        comando = Serial.read();
+        if (comando == '0') {
+          obj = logToSer0;
+          tp = "LoggerSerial";
+        }
+        if (comando == 'q') {
+          obj = logToMqtt;
+          tp = "LoggerMqtt";
+        }
+        if (Serial.available() > 0) {
+          comando = Serial.read();
+          if (comando == 's') {
+            obj->enable();
+            Log.printf("[LOG] iniciado   para %s\n", tp.c_str());
+          }
+          if (comando == 'f') {
+            Log.printf("[LOG] finalizado para %s\n", tp.c_str());
+            obj->disable();
+          }
+        }
       }
     }
   }
