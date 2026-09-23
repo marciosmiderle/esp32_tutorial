@@ -9,6 +9,7 @@ class DHTView : public View<DHTSensor> {
   void logErrors();
 
 public:
+  DHTView(DHTSensor* sensor, Console& console) : View(sensor, console) {}
   void addError(String error);
 
   void render() override;

@@ -22,7 +22,7 @@ public:
   void disconnect();
   bool publishTelemetry(const Message& message);
   bool publishEvent(const char* eventType, const char* eventData);
-  bool publishLog(const char* data, size_t length);
+  virtual bool publishLog(const char* data, size_t length);
   void setCallback(MqttCallback callback);
   void update();
   bool isConnected();

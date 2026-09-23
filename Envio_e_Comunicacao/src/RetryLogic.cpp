@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include "RetryLogic.hpp"
 #include "Logger.hpp"
 

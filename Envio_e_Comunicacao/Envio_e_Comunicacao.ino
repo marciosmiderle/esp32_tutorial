@@ -1,4 +1,3 @@
-#include "src/LoggerSerial.hpp"
 #include "src/WatchDog.hpp"
 
 #include "src/Controls.hpp"
@@ -25,25 +24,28 @@
 #include "src/Logger.hpp"
 #include "src/LoggerMqtt.hpp"
 #include "src/LoggerSerial.hpp"
+#include "src/Console.hpp"
+
+Console console(Serial);
 
 const uint8_t NTC_PIN     = 34;
 const uint8_t NTC_BTN_PIN = 27;
 NtcSensor     ntc;
-NtcView       ntcView;
+NtcView       ntcView(&ntc, console);
 Button        ntcBtn;
 
 const uint8_t DHT_PIN     = 33;
 const uint8_t DHT_BTN_PIN = 16;
 DHTSensor     dht;
-DHTView       dhtView;
+DHTView       dhtView(&dht, console);
 Button        dhtBtn;
 
 const uint8_t PIR_PIN = 17;
 PirSensor     pir;
-PirView       pirView;
+PirView       pirView(&pir, console);
 
 Estacao est(ntc, dht, pir);
-EstacaoView estView(&est);
+EstacaoView estView(&est, console);
 
 // Configurações da API HTTP
 const char* API_URL = "http://httpbin.org/post";  // API de teste que ecoa o payload
@@ -88,7 +90,6 @@ void setupLogger() {
 
 void setupNtc() {
   ntc.begin(NTC_PIN);
-  ntcView.model = &ntc;
   ntc.modelUpdateEvent = []() { est.consolida(); };
   ntc.enableSampling();
 
@@ -99,7 +100,6 @@ void setupNtc() {
 
 void setupDht() {
   dht.begin(DHT_PIN);
-  dhtView.model = &dht;
   dht.modelUpdateEvent = []() { est.consolida(); };
   dht.modelReadSampleInFailEvent = []() {
     dht.resetSampling();
@@ -123,7 +123,6 @@ void setupDht() {
 
 void setupPir() {
   pir.begin(PIR_PIN);
-  pirView.model = &pir;
   pir.motionStartEvent = []() {
     est.consolida();
     // Publica evento de movimento detectado

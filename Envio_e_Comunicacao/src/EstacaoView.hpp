@@ -11,7 +11,7 @@ class EstacaoView : public View<Estacao> {
   void logErrors();
 
 public:
-  EstacaoView(Estacao* estacao);
+  EstacaoView(Estacao* estacao, Console& console);
   void addError(String error);
 
   const char* interpretTemperature(float tempC);

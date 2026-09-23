@@ -1,9 +1,7 @@
 #include <Arduino.h>
 #include "EstacaoView.hpp"
 
-EstacaoView::EstacaoView(Estacao* estacao) {
-  model = estacao;
-}
+EstacaoView::EstacaoView(Estacao* estacao, Console& console) : View(estacao, console) {}
 
 void EstacaoView::logValues() {
   NtcSensor& ntc = model->ntc;
@@ -56,7 +54,7 @@ void EstacaoView::logValues() {
 |  | Saude          | %14.1f | %14.1f | %14.1f |       |                        
 |  +----------------+----------------+----------------+----------------+       |
 |                                                                              |)HEREDOC_SENSORES";
-  Serial.printf(condicaoDosSensoresFmt, 
+  console.printf(condicaoDosSensoresFmt,
                 ntcHealth, dhtHealth, pirHealth,
                 ntcRatio, dhtRatio, pirRatio);
 
@@ -67,7 +65,7 @@ void EstacaoView::logValues() {
 |  +---------------------------+----------------+---------------------------+  |
 |  | Condicao termica          | %-14s | %-25s |  |
 |  | Condicao de umidade       | %-14s | %-25s |  |)HEREDOC_INT1";
-  Serial.printf(interpretacaoFmtParte1, 
+  console.printf(interpretacaoFmtParte1,
                 tempObs.c_str(), tempStatus,
                 humidityObs.c_str(), humidityStatus);
 
@@ -83,7 +81,7 @@ void EstacaoView::logValues() {
 +------------------------------------------------------------------------------+
 )HEREDOC_INT2";
 
-  Serial.printf(interpretacaoFmtParte2,
+  console.printf(interpretacaoFmtParte2,
                 motionObs.c_str(), motionStatus,
                 divergenceStatus, divergenceObs,
                 attentionStatus);
@@ -94,7 +92,7 @@ void EstacaoView::addError(String error) {
 }
 
 void EstacaoView::logErrors() {
-  Serial.print(errors);
+  console.print(errors);
   errors = "";
 }
 

@@ -1,5 +1,4 @@
 #include <Arduino.h>
-
 #include "DHTView.hpp"
 
 void DHTView::logValues() {
@@ -48,10 +47,10 @@ void DHTView::logValues() {
     break;
   };
 
-  Serial.printf("DHT22 Temp = %.1f°C Umid = %.1f%% I.C. = %.1f P.Orv = %.1f°C Conf = %s",
+  console.printf("DHT22 Temp = %.1f°C Umid = %.1f%% I.C. = %.1f P.Orv = %.1f°C Conf = %s",
                 newValues.temperature, newValues.humidity, heatIndex, dewPoint,
                 comfortStatus.c_str());
-  Serial.println("");
+  console.println("");
 }
 
 void DHTView::addError(String error) {
@@ -59,8 +58,8 @@ void DHTView::addError(String error) {
 }
 
 void DHTView::logErrors() {
-  Serial.print(errors);
-  Serial.println("");
+  console.print(errors);
+  console.println("");
   errors = "";
 }
 

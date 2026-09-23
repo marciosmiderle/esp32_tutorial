@@ -2,17 +2,18 @@
 
 #include "Logger.hpp"
 #include "MqttClient.hpp"
-#include "StreamString.h"
 
 class LoggerMqtt : public LoggerBase {
   static const int MAX_BUFFER = 2048;
 
   MqttClient& logger;
-  StreamString unsent;
+  String unsent;
 
 public:
   LoggerMqtt(MqttClient& _logger) : logger(_logger) {}
   virtual ~LoggerMqtt() {};
+
+  const String& getUnsentBuffer() const;
 
   using Print::write;
   size_t write(const uint8_t* buffer, size_t size) override;
