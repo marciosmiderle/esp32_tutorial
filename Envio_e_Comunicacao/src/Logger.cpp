@@ -1,12 +1,8 @@
 #include "Logger.hpp"
 
-static Logger* instance = nullptr;
-
 Logger& Logger::getInstance() {
-  if (instance == nullptr) {
-    instance = new Logger();
-  }
-  return *instance;
+  static Logger instance;
+  return instance;
 }
 
 Logger::Logger() {}

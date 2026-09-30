@@ -14,7 +14,10 @@
 #include "src/Estacao.hpp"
 #include "src/EstacaoView.hpp"
 
-#include "src/WiFiManager.hpp"
+#include <NetworkManager.h> // soosp/NetworkManager
+#include "src/NetManager.hpp"
+#include <WiFiAdapter.h>
+#include <WiFiProfile.h>
 
 #include "src/Message.hpp"
 #include "src/HttpClientLocal.hpp"
@@ -141,18 +144,50 @@ void setupPir() {
 
 void setupEst() {}
 
-WiFiManager wif;
+NetManager& netMgr = NetManager::getInstance();
+WiFiProfile wifiProfile;
+WiFiAdapter wifiAdapter(wifiProfile);
 
-void setupWiFi() {
-  wif.begin();
-  wif.connectingEvent      = []() { Log.println("wif.connectingEvent"); };
-  wif.connectedEvent = []() {
-    Log.print("wif.connectedEvent ");
-    Log.println(WiFi.localIP());
+WiFiProfile::WiFiConfig cfg = {
+  .ssid = "Wokwi-GUEST",
+  .password = ""
+};
+
+void setupNetwork() {
+  netMgr.startEvent     = []() { Log.println("netMgr.startEvent"); };
+
+  netMgr.connectedEvent      = []() {
+    Log.print("netMgr.connectedEvent - IP: ");
+    Log.println(NetworkManagerClass::instance().getLocalIP());
+
+    mqttClient.start();
   };
-  wif.connectionLostEvent  = []() { Log.println("wif.connectionLostEvent"); };
-  wif.disconnectionEvent   = []() { Log.println("wif.disconnectionEvent"); };
-  wif.connectionStopEvent  = []() { Log.println("wif.connectionStopEvent"); };
+  netMgr.disconnectedEvent  = []() {
+    Log.println("netMgr.disconnectedEvent");
+
+    mqttClient.stop();
+  };
+  netMgr.connectionFallbackEvent       = []() {
+    Log.print("netMgr.connectionFallbackEvent - IP: ");
+    Log.println(NetworkManagerClass::instance().getLocalIP());
+
+    mqttClient.restart();
+  };
+  netMgr.connectionRestoreEvent = []() {
+    Log.println("netMgr.connectionRestoreEvent");
+
+    mqttClient.restart();
+  };
+
+  netMgr.stopEvent = []() {
+    Log.println("netMgr.stopEvent");
+
+    mqttClient.stop();
+  };
+
+  wifiProfile.setConfig(cfg);
+  NetworkManagerClass::instance().addAdapter(wifiAdapter);
+  netMgr.start();
 }
 
 // Callback para comandos MQTT recebidos
@@ -249,23 +284,11 @@ void consoleInput() {
     if (comando == 'w') {
       comando = Serial.peek();
       if (comando == 's') {
-        //wif.connectingEvent  wif.connectedEvent
-        wif.start();
+        netMgr.start();
       }
       if (comando == 'f') {
-        // wif.connectionStopEvent
-        wif.stop();
+        netMgr.stop();
       }
-      /* TODO: generate these events
-         if (comando == 'd') {
-         // wif.connectionLostEvent
-         // wif.disconnectionEvent
-         WiFi.active(false);
-         }
-         if (comando == 'r') {
-         WiFi.setAutoReconnect(true);
-         }
-      */
     }
     if (comando == 'q') {
       comando = Serial.peek();
@@ -331,7 +354,7 @@ void setup() {
   setupDht();
   setupPir();
   setupEst();
-  setupWiFi();
+  setupNetwork();
 
   // Configura callback MQTT
   mqttClient.setCallback(mqttCommandCallback);
@@ -365,7 +388,7 @@ void loop() {
   dhtBtn.processInput();
 
   est.update();
-  wif.update();
+  netMgr.update();
   mqttClient.update();
   ota.update();
 
@@ -375,7 +398,7 @@ void loop() {
   estView.render();
 
   // Envia dados para HTTP e MQTT periodicamente
-  if (!wif.isConnected()) {
+  if (!netMgr.isConnected()) {
     return;
   } else {
     unsigned long currentTime = millis();

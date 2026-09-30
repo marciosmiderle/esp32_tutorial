@@ -1,5 +1,7 @@
 #pragma once
 
+#include <future>
+
 // Injeção Global de Mocks e Compatibilidade
 
 #define TEST_BUILD
@@ -15,6 +17,7 @@
 #include <Arduino.h>
 #include "mocks/ESP.h"
 #include "mocks/ArduinoJsonCompat.h"
+#include "mocks/millis.h"
 
 #undef Logger
 #undef main

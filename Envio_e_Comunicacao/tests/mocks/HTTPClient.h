@@ -1,20 +1,12 @@
 #pragma once
 
 #include <Arduino.h>
+#include "NetworkClient.h"
 
 enum followRedirects_t {
     HTTPC_DISABLE_FOLLOW_REDIRECTS,
     HTTPC_STRICT_FOLLOW_REDIRECTS,
     HTTPC_FORCE_FOLLOW_REDIRECTS
-};
-
-class NetworkClient : public Stream {
-public:
-    size_t write(uint8_t c) override { return 1; }
-    int available() override { return 0; }
-    int read() override { return -1; }
-    int peek() override { return -1; }
-    void flush() override {}
 };
 
 class HTTPClient {
@@ -32,4 +24,5 @@ public:
     String getString() { return ""; }
     NetworkClient* getStreamPtr() { return nullptr; }
     bool connected() { return false; }
+    void setConnectTimeout(int32_t connectTimeout) {};
 };

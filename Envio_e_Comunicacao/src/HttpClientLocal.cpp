@@ -29,6 +29,7 @@ bool HttpClientLocal::performRequest(const Message& message) {
   
   HTTPClient http;
   http.begin(apiUrl);
+  http.setConnectTimeout(500);
   http.addHeader("Content-Type", "application/json");
   
   Log.print("[HTTP] Enviando POST para ");

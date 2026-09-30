@@ -20,6 +20,9 @@ class TempAndHumidity {
   float humidity;
 };
 
+// winerror.h
+#undef ERROR_TIMEOUT
+
 class DHTesp {
 public:
 
@@ -44,5 +47,5 @@ public:
   DHT_ERROR_t getStatus() { return DHT_ERROR_t::ERROR_NONE; };
   float computeHeatIndex(float temperature, float percentHumidity, bool isFahrenheit=false) { return 0; };
   float computeDewPoint(float temperature, float percentHumidity, bool isFahrenheit=false) { return 0; };
-  float getComfortRatio(ComfortState& destComfStatus, float temperature, float percentHumidity, bool isFahrenheit=false) { return 0; };
+  float getComfortRatio(ComfortState& destComfStatus, float temperature, float percentHumidity, bool isFahrenheit=false) { destComfStatus = Comfort_OK; return 0; };
 };

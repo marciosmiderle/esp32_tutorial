@@ -7,6 +7,8 @@
 class MqttClientMock : public MqttClient {
 public:
     MqttClientMock() : MqttClient("", 0, "", "", "", "", "", "") {}
+    virtual ~MqttClientMock() {};
+
     bool publishLog(const char* data, size_t length) override {
         mock()
             .actualCall("publishLog")

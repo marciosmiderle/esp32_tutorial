@@ -9,6 +9,7 @@ class LoggerBase : public Print {
   bool enabled = true;
 
 public:
+  virtual ~LoggerBase() {};
   using Print::write;
   size_t write(uint8_t c);
   virtual void update();

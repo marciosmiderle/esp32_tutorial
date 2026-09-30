@@ -1,17 +1,17 @@
 find_package(CppUTest REQUIRED)
-if(CPPUTEST_INCLUDE_DIRS)
-  set(CPPUTEST_CORRECT_INCLUDE "${CPPUTEST_INCLUDE_DIRS}")
-elseif(CppUTest_INCLUDE_DIRS)
-  set(CPPUTEST_CORRECT_INCLUDE "${CppUTest_INCLUDE_DIRS}")
-else()
-  set(CPPUTEST_CORRECT_INCLUDE "/ucrt64/include") # fallback seguro para o MSYS2
+if(MINGW AND TARGET CppUTest)
+  get_target_property(CPPUTEST_LINK_LIBS
+    CppUTest
+    INTERFACE_LINK_LIBRARIES)
+
+  string(REPLACE "winmm.lib" "winmm"
+    CPPUTEST_LINK_LIBS
+    "${CPPUTEST_LINK_LIBS}")
+
+  set_property(TARGET CppUTest PROPERTY
+    INTERFACE_LINK_LIBRARIES "${CPPUTEST_LINK_LIBS}")
 endif()
-if(TARGET CppUTest)
-  set_target_properties(CppUTest PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${CPPUTEST_CORRECT_INCLUDE}/CppUTest")
-endif()
-if(TARGET CppUTestExt)
-  set_target_properties(CppUTestExt PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "${CPPUTEST_CORRECT_INCLUDE}/CppUTestExt")
-endif()
+
 include(FetchContent)
 FetchContent_Declare(
   arduino_emulator
@@ -29,3 +29,7 @@ FetchContent_Declare(
   GIT_TAG        v2.8
 )
 FetchContent_MakeAvailable(arduino_emulator ArduinoJson PubSubClient)
+
+add_library(PubSubClient STATIC "${pubsubclient_SOURCE_DIR}/src/PubSubClient.cpp")
+target_include_directories(PubSubClient PUBLIC "${pubsubclient_SOURCE_DIR}/src")
+target_link_libraries(PubSubClient PUBLIC arduino_emulator)
