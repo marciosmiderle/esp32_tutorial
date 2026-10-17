@@ -20,6 +20,7 @@
 #include <WiFiProfile.h>
 
 #include "src/Message.hpp"
+#include "src/Publisher.hpp"
 #include "src/HttpClientLocal.hpp"
 #include "src/MqttClient.hpp"
 #include "src/OtaUpdater.hpp"
@@ -50,30 +51,7 @@ PirView       pirView(&pir, console);
 Estacao est(ntc, dht, pir);
 EstacaoView estView(&est, console);
 
-// Configurações da API HTTP
-const char* API_URL = "http://httpbin.org/post";  // API de teste que ecoa o payload
-HttpClientLocal httpClient(API_URL);
-
-// Configurações do Broker MQTT
-const char* MQTT_BROKER = "broker.hivemq.com";  // Broker público HiveMQ
-const int MQTT_PORT = 1883;
-const char* MQTT_CLIENT_ID = "estacao_meteorologica_001";
-const char* MQTT_TELEMETRY_TOPIC = "estacao/telemetria";
-const char* MQTT_EVENT_TOPIC = "estacao/eventos";
-const char* MQTT_LOGS_TOPIC = "estacao/logs";
-const char* MQTT_COMMAND_TOPIC = "estacao/comandos/resposta";
-const char* MQTT_COMMAND_SUBSCRIBE_TOPIC = "estacao/comandos/entrada";
-
-MqttClient mqttClient(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID,
-                      MQTT_TELEMETRY_TOPIC, MQTT_EVENT_TOPIC,
-                      MQTT_COMMAND_TOPIC, MQTT_COMMAND_SUBSCRIBE_TOPIC,
-                      MQTT_LOGS_TOPIC);
-
 OtaUpdater ota;
-
-Message currentMessage;
-unsigned long lastSendTime = 0;
-const unsigned long SEND_INTERVAL_MS = 10000;  // Envia a cada 10 segundos
 
 WatchDog wdg(5000);
 
@@ -86,7 +64,7 @@ LoggerMqtt*   logToMqtt = nullptr;
 
 void setupLogger() {
   logToSer0 = new LoggerSerial(Serial);
-  logToMqtt = new LoggerMqtt(mqttClient);
+  logToMqtt = new LoggerMqtt(MQTT);
   Log.addLogger(logToSer0);
   Log.addLogger(logToMqtt);
 }
@@ -129,22 +107,21 @@ void setupPir() {
   pir.motionStartEvent = []() {
     est.consolida();
     // Publica evento de movimento detectado
-    if (mqttClient.isConnected()) {
-      mqttClient.publishEvent("motion_start", "Movimento detectado");
+    if (MQTT.isConnected()) {
+      MQTT.publishEvent("motion_start", "Movimento detectado");
     }
   };
   pir.motionStopEvent = []() {
     est.consolida();
     // Publica evento de movimento cessado
-    if (mqttClient.isConnected()) {
-      mqttClient.publishEvent("motion_stop", "Movimento cessado");
+    if (MQTT.isConnected()) {
+      MQTT.publishEvent("motion_stop", "Movimento cessado");
     }
   };
 }
 
 void setupEst() {}
 
-NetManager& netMgr = NetManager::getInstance();
 WiFiProfile wifiProfile;
 WiFiAdapter wifiAdapter(wifiProfile);
 
@@ -154,40 +131,49 @@ WiFiProfile::WiFiConfig cfg = {
 };
 
 void setupNetwork() {
-  netMgr.startEvent     = []() { Log.println("netMgr.startEvent"); };
+  NetMgr.startEvent     = []() { Log.println("NetMgr.startEvent"); };
 
-  netMgr.connectedEvent      = []() {
-    Log.print("netMgr.connectedEvent - IP: ");
+  NetMgr.connectedEvent      = []() {
+    Log.print("NetMgr.connectedEvent - IP: ");
     Log.println(NetworkManagerClass::instance().getLocalIP());
 
-    mqttClient.start();
+    Pub.start();
+    MQTT.start();
   };
-  netMgr.disconnectedEvent  = []() {
-    Log.println("netMgr.disconnectedEvent");
+  NetMgr.disconnectedEvent  = []() {
+    Log.println("NetMgr.disconnectedEvent");
 
-    mqttClient.stop();
+    Pub.stop();
+    MQTT.stop();
   };
-  netMgr.connectionFallbackEvent       = []() {
-    Log.print("netMgr.connectionFallbackEvent - IP: ");
+  NetMgr.connectionFallbackEvent       = []() {
+    Log.print("NetMgr.connectionFallbackEvent - IP: ");
     Log.println(NetworkManagerClass::instance().getLocalIP());
 
-    mqttClient.restart();
+    Pub.restart();
+    MQTT.restart();
   };
-  netMgr.connectionRestoreEvent = []() {
-    Log.println("netMgr.connectionRestoreEvent");
+  NetMgr.connectionRestoreEvent = []() {
+    Log.println("NetMgr.connectionRestoreEvent");
 
-    mqttClient.restart();
+    Pub.restart();
+    MQTT.restart();
   };
 
-  netMgr.stopEvent = []() {
-    Log.println("netMgr.stopEvent");
+  NetMgr.stopEvent = []() {
+    Log.println("NetMgr.stopEvent");
 
-    mqttClient.stop();
+    Pub.stop();
+    MQTT.stop();
   };
 
   wifiProfile.setConfig(cfg);
   NetworkManagerClass::instance().addAdapter(wifiAdapter);
-  netMgr.start();
+  NetMgr.start();
+}
+
+void setupPublisher() {
+  Pub.setEstacao(&est);
 }
 
 // Callback para comandos MQTT recebidos
@@ -201,9 +187,9 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
 
   if (strcmp(message, "firmware_update_stop") == 0) {
     if (ota.stopUpdate()) {
-      mqttClient.publishEvent("ota", "update cancelado");
+      MQTT.publishEvent("ota", "update cancelado");
     } else {
-      mqttClient.publishEvent("ota", ota.getLastError());
+      MQTT.publishEvent("ota", ota.getLastError());
     }
     return;
   }
@@ -214,13 +200,13 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
     while (*url == ' ') ++url;
     if (*url == '\0') {
       Log.println("[COMANDO] Uso: firmware_update <url_do_bin>");
-      mqttClient.publishEvent("ota", "uso: firmware_update <url>");
+      MQTT.publishEvent("ota", "uso: firmware_update <url>");
       return;
     }
     if (ota.startUpdate(url)) {
-      mqttClient.publishEvent("ota", "download iniciado");
+      MQTT.publishEvent("ota", "download iniciado");
     } else {
-      mqttClient.publishEvent("ota", ota.getLastError());
+      MQTT.publishEvent("ota", ota.getLastError());
     }
     return;
   }
@@ -228,9 +214,9 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   // firmware_mark_ok
   if (strcmp(message, "firmware_mark_ok") == 0) {
     if (ota.markOk()) {
-      mqttClient.publishEvent("ota", "firmware marcado como valido");
+      MQTT.publishEvent("ota", "firmware marcado como valido");
     } else {
-      mqttClient.publishEvent("ota", "mark ok falhou");
+      MQTT.publishEvent("ota", "mark ok falhou");
     }
     return;
   }
@@ -238,9 +224,9 @@ void mqttCommandCallback(const char* topic, const byte* payload, unsigned int le
   // firmware_mark_invalid_reboot
   if (strcmp(message, "firmware_mark_invalid_reboot") == 0) {
     if (ota.markInvalidReboot()) {
-      mqttClient.publishEvent("ota", "firmware marcado como valido, reboot");
+      MQTT.publishEvent("ota", "firmware marcado como valido, reboot");
     } else {
-      mqttClient.publishEvent("ota", "firmware marcado como valido falhou");
+      MQTT.publishEvent("ota", "firmware marcado como valido falhou");
     }
     return;
   }
@@ -284,23 +270,22 @@ void consoleInput() {
     if (comando == 'w') {
       comando = Serial.peek();
       if (comando == 's') {
-        netMgr.start();
+        NetMgr.start();
       }
       if (comando == 'f') {
-        netMgr.stop();
+        NetMgr.stop();
       }
     }
     if (comando == 'q') {
       comando = Serial.peek();
       if (comando == 's') {
-        mqttClient.connect();
+        MQTT.connect();
       }
       if (comando == 'f') {
-        mqttClient.disconnect();
+        MQTT.disconnect();
       }
       if (comando == 'p') {
-        currentMessage.buildFrom(est);
-        mqttClient.publishTelemetry(currentMessage);
+        Pub.publishTelemetry();
       }
     }
 
@@ -355,9 +340,10 @@ void setup() {
   setupPir();
   setupEst();
   setupNetwork();
+  setupPublisher();
 
   // Configura callback MQTT
-  mqttClient.setCallback(mqttCommandCallback);
+  MQTT.setCallback(mqttCommandCallback);
 
   ota.begin();
   ota.setStatusCallback([](OtaUpdater::State s, const char* detail) {
@@ -388,38 +374,15 @@ void loop() {
   dhtBtn.processInput();
 
   est.update();
-  netMgr.update();
-  mqttClient.update();
+  NetMgr.update();
+  Pub.update();
+  MQTT.update();
   ota.update();
 
   ntcView.render();
   dhtView.render();
   pirView.render();
   estView.render();
-
-  // Envia dados para HTTP e MQTT periodicamente
-  if (!netMgr.isConnected()) {
-    return;
-  } else {
-    unsigned long currentTime = millis();
-    if (currentTime - lastSendTime >= SEND_INTERVAL_MS) {
-      lastSendTime = currentTime;
-
-      // Constrói mensagem única (sem duplicação de código)
-      currentMessage.buildFrom(est);
-
-      // Envia por HTTP (com retry automático)
-      httpClient.send(currentMessage);
-
-      // Publica por MQTT (com reconexão automática)
-      if (mqttClient.isConnected()) {
-        Log.println("\n--- Publicando via MQTT ---");
-        mqttClient.publishTelemetry(currentMessage);
-      } else {
-        Log.println("\n[MQTT] Ainda nao conectado (update() esta tentando)");
-      }
-    }
-  }
 
   wdg.feed();
   Log.update();

@@ -40,11 +40,6 @@ bool RetryLogic::retryTimeoutHasElapsed() const {
   return (millis() - lastAttemptMs) >= retryTimeoutMs;
 }
 
-// bool RetryLogic::canStart() const {
-//   if (tryLaterUntilMs == 0) return true;
-//   return millis() >= tryLaterUntilMs;
-// }
-
 void RetryLogic::registerAttempt() {
   retryCount++;
   lastAttemptMs = millis();

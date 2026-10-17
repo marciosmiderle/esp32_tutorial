@@ -19,6 +19,12 @@ NetManager::NetManager(int maxRetries, unsigned long retryTimeoutMs,
   nm.onEvent(onNetworkEvent);
 }
 
+NetManager::~NetManager() {
+  // if (started) {
+  //   stop();
+  // }
+}
+
 void NetManager::start() {
   started = true;
   if (!retry.canRetry()) {

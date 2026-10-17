@@ -7,7 +7,6 @@ public:
   bool hasRetriesLeft() const;
   bool retryTimeoutHasElapsed() const;
   bool canRetry();
-  bool canStart() const;
   bool isInTryLater();
   bool tryLaterExpired() const;
 

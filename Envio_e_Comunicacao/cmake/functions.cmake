@@ -1,4 +1,5 @@
-function(add_arduino_firmware_target TYPE OUTPUT_PREFIX EXTRA_FLAGS SRC_FILES IS_ALL_TARGET)
+function(add_arduino_firmware_target TYPE OUTPUT_PREFIX EXTRA_FLAGS IS_ALL_TARGET)
+  set(DEPEND_FILES ${ARGN}) # resto sao as dependencias
   set(FIRMWARE_BIN  "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.bin")
   set(FIRMWARE_MAP  "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.map")
   set(FIRMWARE_ELF  "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.elf")
@@ -13,7 +14,7 @@ function(add_arduino_firmware_target TYPE OUTPUT_PREFIX EXTRA_FLAGS SRC_FILES IS
     --verbose
     ${EXTRA_FLAGS}
     COMMAND ${CMAKE_COMMAND} -E md5sum "${FIRMWARE_BIN}" > "${FIRMWARE_BIN}.md5"
-    DEPENDS ${SRC_FILES}
+    DEPENDS ${DEPEND_FILES}
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     USES_TERMINAL
   )

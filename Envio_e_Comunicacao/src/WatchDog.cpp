@@ -33,7 +33,7 @@ void WatchDog::begin() {
     return;
   }
 
-  Log.printf("[WatchDog] Iniciado nativamente — Timeout: %lu ms\n", this->timeout_ms);
+  Log.printf("[WatchDog] Iniciado nativamente — Timeout: %lu ms\n", (long unsigned int)this->timeout_ms);
 }
 
 void WatchDog::feed() {

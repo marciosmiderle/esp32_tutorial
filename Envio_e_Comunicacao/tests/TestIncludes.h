@@ -5,6 +5,7 @@
 // Injeção Global de Mocks e Compatibilidade
 
 #define TEST_BUILD
+#define HTTPCLIENT_NOSECURE
 
 // handle name conflits
 #define Logger EmulatorLogger
@@ -24,3 +25,6 @@
 
 #include "mocks/PrintPolyfill.hpp"
 #define Print PrintPolyfill
+#include "mocks/StringPolyfill.hpp"
+
+#include "os_posix_compat.hpp"

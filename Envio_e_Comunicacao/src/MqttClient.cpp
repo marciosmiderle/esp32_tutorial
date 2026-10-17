@@ -2,7 +2,22 @@
 #include "Logger.hpp"
 #include <ArduinoJson.h>
 
-MqttClient* MqttClient::instance = nullptr;
+const char* MQTT_BROKER = "broker.hivemq.com";  // Broker público HiveMQ
+const int   MQTT_PORT = 1883;
+const char* MQTT_CLIENT_ID = "estacao_meteorologica_001";
+const char* MQTT_TELEMETRY_TOPIC = "estacao/telemetria";
+const char* MQTT_EVENT_TOPIC = "estacao/eventos";
+const char* MQTT_LOGS_TOPIC = "estacao/logs";
+const char* MQTT_COMMAND_TOPIC = "estacao/comandos/resposta";
+const char* MQTT_COMMAND_SUBSCRIBE_TOPIC = "estacao/comandos/entrada";
+
+MqttClient& MqttClient::getInstance() {
+  static MqttClient instance(MQTT_BROKER, MQTT_PORT, MQTT_CLIENT_ID,
+                             MQTT_TELEMETRY_TOPIC, MQTT_EVENT_TOPIC,
+                             MQTT_COMMAND_TOPIC, MQTT_COMMAND_SUBSCRIBE_TOPIC,
+                             MQTT_LOGS_TOPIC);
+  return instance;
+}
 
 MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
                        const char* _telemetryTopic, const char* _eventTopic,
@@ -25,8 +40,11 @@ MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
   client.setKeepAlive(180);         // segundos
   client.setSocketTimeout(1);       // segundos
 
-  instance = this;
   client.setCallback(mqttCallbackWrapper);
+}
+
+MqttClient::~MqttClient() {
+  stop();
 }
 
 void MqttClient::start() {
@@ -74,13 +92,6 @@ void MqttClient::connect() {
     return;
   }
 
-  Log.print("[MQTT] Conectando a ");
-  Log.print(broker);
-  Log.print(":");
-  Log.print(port);
-  Log.print(" como ");
-  Log.println(resolvedClientId);
-
   // cleanSession=true: re-subscribe sempre após connect
   bool success = client
     .setKeepAlive(180)
@@ -88,7 +99,12 @@ void MqttClient::connect() {
     .connect(resolvedClientId);
 
   if (success) {
-    Log.println("[MQTT] Conectado");
+    Log.print("[MQTT] Conectado a ");
+    Log.print(broker);
+    Log.print(":");
+    Log.print(port);
+    Log.print(" como ");
+    Log.println(resolvedClientId);
 
     String cmdTopic(resolvedClientId);
     cmdTopic.concat("/");
@@ -214,9 +230,7 @@ void MqttClient::setCallback(MqttCallback callback) {
 }
 
 void MqttClient::mqttCallbackWrapper(char* topic, byte* payload, unsigned int length) {
-  if (instance) {
-    instance->handleCommand(topic, payload, length);
-  }
+  MQTT.handleCommand(topic, payload, length);
 }
 
 void MqttClient::handleCommand(char* topic, byte* payload, unsigned int length) {

@@ -10,13 +10,17 @@
 typedef std::function<void(const char* topic, const byte* payload, unsigned int length)> MqttCallback;
 
 class MqttClient {
-public:
+protected:
   MqttClient(const char* broker, int port, const char* clientId,
              const char* telemetryTopic, const char* eventTopic,
              const char* commandTopic, const char* commandSubscribeTopic,
              const char* _logTopic,
              int maxRetries = 5, unsigned long retryTimeoutMs = 3000,
              unsigned long tryLaterTimeoutMs = 30000);
+  virtual ~MqttClient();
+
+public:
+  static MqttClient& getInstance();
 
   void start();
   void stop();
@@ -55,3 +59,5 @@ private:
   RetryLogic retry;
   bool started;
 };
+
+#define MQTT MqttClient::getInstance()

@@ -18,18 +18,8 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/pschatzmann/Arduino-Emulator
   GIT_TAG        main
 )
-FetchContent_Declare(
-  ArduinoJson
-  GIT_REPOSITORY https://github.com/bblanchon/ArduinoJson.git
-  GIT_TAG        v7.4.3
-)
-FetchContent_Declare(
-  PubSubClient
-  GIT_REPOSITORY https://github.com/knolleary/pubsubclient.git
-  GIT_TAG        v2.8
-)
-FetchContent_MakeAvailable(arduino_emulator ArduinoJson PubSubClient)
+FetchContent_MakeAvailable(arduino_emulator)
+include(${arduino_emulator_SOURCE_DIR}/Arduino.cmake)
 
-add_library(PubSubClient STATIC "${pubsubclient_SOURCE_DIR}/src/PubSubClient.cpp")
-target_include_directories(PubSubClient PUBLIC "${pubsubclient_SOURCE_DIR}/src")
-target_link_libraries(PubSubClient PUBLIC arduino_emulator)
+arduino_library(ArduinoJson https://github.com/bblanchon/ArduinoJson.git v7.4.3)
+arduino_library(PubSubClient https://github.com/knolleary/pubsubclient.git v2.8)

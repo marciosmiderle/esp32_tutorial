@@ -6,7 +6,7 @@
 // Especialização para permitir que ArduinoJson use a classe String do emulador
 // mesmo que ela não tenha o método write() nativo.
 namespace ArduinoJson {
-    namespace V743HB42 { // Namespace interno da versão da lib
+    namespace V742HB42 { // Namespace interno da versão da lib
         namespace detail {
             template <>
             struct Writer<arduino::String, void> {

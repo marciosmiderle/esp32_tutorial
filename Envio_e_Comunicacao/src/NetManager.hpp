@@ -7,6 +7,7 @@
 class NetManager : public Telemetry {
   NetManager(int maxRetries, unsigned long retryTimeoutMs,
              unsigned long tryLaterTimeoutMs);
+  virtual ~NetManager();
 
 public:
   static NetManager& getInstance(int maxRetries = 5, unsigned long retryTimeoutMs = 3000,
@@ -31,3 +32,5 @@ private:
   RetryLogic retry;
   bool started;
 };
+
+#define NetMgr NetManager::getInstance()
