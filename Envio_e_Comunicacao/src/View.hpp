@@ -6,10 +6,10 @@ template <class model_type> class View {
   bool valid = true;
 
 public:
-  model_type *model;
-  Console &console;
+  model_type* model;
+  Console* console;
 
-  View(model_type *m, Console &c) : model(m), console(c) {}
+  View(model_type* m, Console* c) : model(m), console(c) {}
 
   bool isValid() { return valid; }
   void invalidate() { valid = false; }

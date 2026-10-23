@@ -25,6 +25,5 @@
 
 #include "mocks/PrintPolyfill.hpp"
 #define Print PrintPolyfill
+#define Stream StreamPolyfill
 #include "mocks/StringPolyfill.hpp"
-
-#include "os_posix_compat.hpp"

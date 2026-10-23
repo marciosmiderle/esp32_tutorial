@@ -27,7 +27,12 @@ target_compile_options(tests PRIVATE
 
 # Injeta mocks globais e compatibilidade (ex: printf, ArduinoJson String write)
 target_compile_options(tests PRIVATE
-  $<$<COMPILE_LANGUAGE:CXX>:-include ${TEST_DIR}/TestIncludes.h>
+  $<$<COMPILE_LANGUAGE:CXX>:-include;${TEST_DIR}/TestIncludes.h>
+)
+set(SPECIFIC_OBJS ${TEST_DIR}/mocks/snarfed/HTTPClient.cpp)
+set_source_files_properties(${SPECIFIC_OBJS}
+  PROPERTIES COMPILE_OPTIONS
+  "$<$<COMPILE_LANGUAGE:CXX>:-include;${SRC_DIR}/os_posix_compat.hpp>"
 )
 
 set_target_properties(tests PROPERTIES

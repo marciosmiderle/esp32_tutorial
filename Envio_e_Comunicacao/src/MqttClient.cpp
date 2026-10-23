@@ -28,7 +28,7 @@ MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
   : broker(_broker), port(_port), clientId(_clientId),
     telemetryTopic(_telemetryTopic), eventTopic(_eventTopic),
     commandTopic(_commandTopic), commandSubscribeTopic(_commandSubscribeTopic),
-    logTopic(_logTopic), userCallback(nullptr),
+    logTopic(_logTopic), userCallback({}),
     retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs), started(false) {
 
   buildUniqueClientId();
@@ -40,7 +40,7 @@ MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
   client.setKeepAlive(180);         // segundos
   client.setSocketTimeout(1);       // segundos
 
-  client.setCallback(mqttCallbackWrapper);
+  client.setCallback(pubSubClientCallback);
 }
 
 MqttClient::~MqttClient() {
@@ -64,13 +64,42 @@ void MqttClient::restart() {
 void MqttClient::update() {
   if (!started) return;
 
+  if (queue.empty())
+    return;
+
   if (isConnected()) {
-    // publishMessages(); TODO
-    client.loop();
+
+    if (sendQueuedMessage(queue.front())) {
+
+      if (client.loop()) {
+        queue.pop_front();
+        retry.reset();
+      }
+    }
+
     return;
   }
 
   connect();
+}
+
+bool MqttClient::sendMessage(const MqttMessage& msg) {
+  if (maxQueue == 0) return false;
+
+  while (queue.size() >= maxQueue) {  // descarta a mais antiga
+    queue.pop_front();
+    droppedCount++;
+  }
+  queue.push_back(msg);
+  return true;
+}
+
+bool MqttClient::sendQueuedMessage(MqttMessage& msg) {
+  String fullTopic(resolvedClientId);
+  fullTopic.concat("/");
+  fullTopic.concat(msg.topic);
+
+  return client.publish(fullTopic.c_str(), msg.content.c_str());
 }
 
 void MqttClient::buildUniqueClientId() {
@@ -133,15 +162,6 @@ void MqttClient::disconnect() {
   retry.reset();
 }
 
-bool MqttClient::ensureConnection() {
-  if (isConnected()) {
-    return true;
-  }
-  restart();
-
-  return false;
-}
-
 bool MqttClient::publishTelemetry(const Message& message) {
   String jsonPayload = message.toJson();
   if (jsonPayload.length() + 16 > client.getBufferSize()) {
@@ -161,10 +181,6 @@ bool MqttClient::publishTelemetry(const Message& message) {
   client.loop();
   //addMessage(telTopic.c_str(), jsonPayload.c_str());
 
-  if (!ensureConnection()) {
-    Log.println("[MQTT] publishTelemetry: sem conexao");
-    return false;
-  }
   // QoS 1: pelo menos uma entrega no broker
   bool success = client.publish(telTopic.c_str(), jsonPayload.c_str(), false);
   client.loop();
@@ -179,11 +195,6 @@ bool MqttClient::publishTelemetry(const Message& message) {
 }
 
 bool MqttClient::publishEvent(const char* eventType, const char* eventData) {
-  if (!ensureConnection()) {
-    Log.println("[MQTT] publishEvent: sem conexao");
-    return false;
-  }
-
   JsonDocument doc;
   doc["type"] = eventType;
   doc["data"] = eventData;
@@ -213,11 +224,6 @@ bool MqttClient::publishEvent(const char* eventType, const char* eventData) {
 }
 
 bool MqttClient::publishLog(const char* data, size_t length) {
-  if (!ensureConnection()) {
-    //Log.println("[MQTT] publishLog: sem conexao");
-    return false;
-  }
-
   String rlogTopic(resolvedClientId);
   rlogTopic.concat("/");
   rlogTopic.concat(logTopic);
@@ -229,25 +235,8 @@ void MqttClient::setCallback(MqttCallback callback) {
   userCallback = callback;
 }
 
-void MqttClient::mqttCallbackWrapper(char* topic, byte* payload, unsigned int length) {
-  MQTT.handleCommand(topic, payload, length);
-}
-
-void MqttClient::handleCommand(char* topic, byte* payload, unsigned int length) {
-  Log.print("[MQTT] CMD ");
-  Log.print(topic);
-  Log.print(": ");
-
-  // Cópia segura
-  char message[128];
-  unsigned int n = length < sizeof(message) - 1 ? length : sizeof(message) - 1;
-  memcpy(message, payload, n);
-  message[n] = '\0';
-  Log.println(message);
-
-  if (userCallback) {
-    userCallback(topic, payload, length);
-  }
+void MqttClient::pubSubClientCallback(char* topic, byte* payload, unsigned int length) {
+  MQTT.userCallback(topic, payload, length);
 }
 
 bool MqttClient::isConnected() {

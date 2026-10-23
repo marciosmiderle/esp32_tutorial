@@ -357,8 +357,9 @@ TEST(HttpClientLocal, PostRecebidoEStatus200Lido) {
   wait_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   server.response = HttpTestServer::okResponse();
-  client->update(); // *ready -> sending
-  client->update(); // *sending -> receiving
+  // client->update(); // *ready -> sending
+  // client->update(); // *sending -> receiving
+  wait_until_client_phase_is(Phase::Receiving);
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
   CHECK_TRUE(2 == client->getContentLengh());
   client->update(); // ready

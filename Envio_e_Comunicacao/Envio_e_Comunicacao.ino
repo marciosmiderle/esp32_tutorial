@@ -29,27 +29,30 @@
 #include "src/LoggerMqtt.hpp"
 #include "src/LoggerSerial.hpp"
 #include "src/Console.hpp"
+#include "src/MqttStream.hpp"
+#include "src/Router.hpp"
+#include "src/Command.hpp"
 
 Console console(Serial);
 
 const uint8_t NTC_PIN     = 34;
 const uint8_t NTC_BTN_PIN = 27;
 NtcSensor     ntc;
-NtcView       ntcView(&ntc, console);
+NtcView       ntcView(&ntc, &console);
 Button        ntcBtn;
 
 const uint8_t DHT_PIN     = 33;
 const uint8_t DHT_BTN_PIN = 16;
 DHTSensor     dht;
-DHTView       dhtView(&dht, console);
+DHTView       dhtView(&dht, &console);
 Button        dhtBtn;
 
 const uint8_t PIR_PIN = 17;
 PirSensor     pir;
-PirView       pirView(&pir, console);
+PirView       pirView(&pir, &console);
 
 Estacao est(ntc, dht, pir);
-EstacaoView estView(&est, console);
+EstacaoView estView(&est, &console);
 
 OtaUpdater ota;
 
@@ -176,75 +179,9 @@ void setupPublisher() {
   Pub.setEstacao(&est);
 }
 
-// Callback para comandos MQTT recebidos
-void mqttCommandCallback(const char* topic, const byte* payload, unsigned int length) {
-  char message[length + 1];
-  memcpy(message, payload, length);
-  message[length] = '\0';
-
-  Log.print("[COMANDO] Recebido: ");
-  Log.println(message);
-
-  if (strcmp(message, "firmware_update_stop") == 0) {
-    if (ota.stopUpdate()) {
-      MQTT.publishEvent("ota", "update cancelado");
-    } else {
-      MQTT.publishEvent("ota", ota.getLastError());
-    }
-    return;
-  }
-
-  // firmware_update <url>
-  if (strncmp(message, "firmware_update", 15) == 0) {
-    const char* url = message + 15;
-    while (*url == ' ') ++url;
-    if (*url == '\0') {
-      Log.println("[COMANDO] Uso: firmware_update <url_do_bin>");
-      MQTT.publishEvent("ota", "uso: firmware_update <url>");
-      return;
-    }
-    if (ota.startUpdate(url)) {
-      MQTT.publishEvent("ota", "download iniciado");
-    } else {
-      MQTT.publishEvent("ota", ota.getLastError());
-    }
-    return;
-  }
-
-  // firmware_mark_ok
-  if (strcmp(message, "firmware_mark_ok") == 0) {
-    if (ota.markOk()) {
-      MQTT.publishEvent("ota", "firmware marcado como valido");
-    } else {
-      MQTT.publishEvent("ota", "mark ok falhou");
-    }
-    return;
-  }
-
-  // firmware_mark_invalid_reboot
-  if (strcmp(message, "firmware_mark_invalid_reboot") == 0) {
-    if (ota.markInvalidReboot()) {
-      MQTT.publishEvent("ota", "firmware marcado como valido, reboot");
-    } else {
-      MQTT.publishEvent("ota", "firmware marcado como valido falhou");
-    }
-    return;
-  }
-
-  if (strcmp(message, "led_on") == 0) {
-    Log.println("[COMANDO] Acionando LED (simulado)");
-  } else if (strcmp(message, "led_off") == 0) {
-    Log.println("[COMANDO] Desligando LED (simulado)");
-  } else if (strcmp(message, "read_now") == 0) {
-    Log.println("[COMANDO] Mostrando a leitura ambiental atual da estação");
-    estView.invalidate();
-  } else {
-    Log.print("[COMANDO] Comando desconhecido: ");
-    Log.println(message);
-  }
-}
-
 void consoleInput() {
+  return;
+
   if (Serial.available() > 0) {
     char comando = Serial.read();
     if (comando == 'n') {
@@ -330,6 +267,77 @@ void consoleInput() {
   }
 }
 
+MqttStream mqttStream(MQTT);
+Console consoleMqtt(mqttStream);
+
+void setupRouter() {
+  RTR.pollInput = [](Command& cmdOut) {
+    if (console.available()) {
+      String cmdline = console.readAvailableUntil('\n');
+      if (cmdline.isEmpty()) return;
+      cmdOut = Command::fromCommandLine(cmdline, &console);
+    }
+    if (consoleMqtt.available()) {
+      String cmdline = consoleMqtt.readAvailableUntil('\n');
+      if (cmdline.isEmpty()) return;
+      cmdOut = Command::fromCommandLine(cmdline, &consoleMqtt);
+    }
+    return;
+  };
+
+  RTR.on("firmware_update_stop", [](const Command& cmd) {
+      if (ota.stopUpdate()) {
+        MQTT.publishEvent("ota", "update cancelado");
+      } else {
+        MQTT.publishEvent("ota", ota.getLastError());
+      }
+    });
+
+  RTR.on("firmware_update", [](const Command& cmd) {
+      if (cmd.getArgsCount() <= 0) {
+        Log.println("[COMANDO] Uso: firmware_update <url_do_bin>");
+        MQTT.publishEvent("ota", "uso: firmware_update <url>");
+        return;
+      }
+      const String& url = cmd.args[0];
+      if (ota.startUpdate(url.c_str())) {
+        MQTT.publishEvent("ota", "download iniciado");
+      } else {
+        MQTT.publishEvent("ota", ota.getLastError());
+      }
+    });
+
+  RTR.on("firmware_mark_ok", [](const Command& cmd) {
+      if (ota.markOk()) {
+        MQTT.publishEvent("ota", "firmware marcado como valido");
+      } else {
+        MQTT.publishEvent("ota", "mark ok falhou");
+      }
+    });
+
+  RTR.on("firmware_mark_invalid_reboot", [](const Command& cmd) {
+      if (ota.markInvalidReboot()) {
+        MQTT.publishEvent("ota", "firmware marcado como valido, reboot");
+      } else {
+        MQTT.publishEvent("ota", "firmware marcado como valido falhou");
+      }
+    });
+
+  RTR.on("led_on", [](const Command& cmd) {
+      Log.println("[COMANDO] Acionando LED (simulado)");
+    });
+
+  RTR.on("led_off", [](const Command& cmd) {
+      Log.println("[COMANDO] Desligando LED (simulado)");
+    });
+
+  RTR.on("read_now", [](const Command& cmd) {
+      Log.println("[COMANDO] Mostrando a leitura ambiental atual da estação");
+      estView.console = (Console*)cmd.sender;
+      estView.invalidate();
+    });
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -341,9 +349,7 @@ void setup() {
   setupEst();
   setupNetwork();
   setupPublisher();
-
-  // Configura callback MQTT
-  MQTT.setCallback(mqttCommandCallback);
+  setupRouter();
 
   ota.begin();
   ota.setStatusCallback([](OtaUpdater::State s, const char* detail) {
@@ -373,6 +379,8 @@ void loop() {
   ntcBtn.processInput();
   dhtBtn.processInput();
 
+  RTR.update();
+  
   est.update();
   NetMgr.update();
   Pub.update();

@@ -61,13 +61,16 @@ void HttpClientLocal::update() {
   }
   if (phase == Phase::Resolving) {
     if (hostIP != IPAddress()) { // resolveu
-      phase = Phase::Connecting;
       retry.reset();
       if (!initiateConnection()) {
+        if (os_posix_compat::is_wouldblock(os_posix_compat::get_last_error())) {
+          return;
+        }
         phase = Phase::Idle;
         restart();
         return;
       }
+      phase = Phase::Connecting;
     } else {
       DNS.update();
     }
@@ -77,9 +80,11 @@ void HttpClientLocal::update() {
     if (isConnected()) {
       phase = Phase::Ready;
       retry.reset();
+      return;
     } else {
       Log.print("[HTTP] connecting to ");
       Log.println(hostIP);
+      return;
     }
     return;
   }
@@ -170,7 +175,7 @@ bool HttpClientLocal::initiateConnection() {
   sa.sin_addr.s_addr = addr;
 
   int r = ::connect(fd, (struct sockaddr*)&sa, sizeof(sa));
-  if (r == 0 || errno == EINPROGRESS) {
+  if (r == 0 || os_posix_compat::is_inprogress(os_posix_compat::get_last_error())) {
     nc = NetworkClient(fd);
     return true;
   }
@@ -187,28 +192,6 @@ void HttpClientLocal::ao_resolver_dns(const char* name, const char* ip_str, Http
 
 void HttpClientLocal::initiateNameResolution() {
   DNS.resolve(host.c_str(), (AsyncDNSCallback)ao_resolver_dns, this);
-}
-
-short HttpClientLocal::fdEvents() {
-  int fd = http.getStream().fd();
-  if (fd < 0) return 0;
-  fd_set readSet, writeSet, errSet;
-  FD_ZERO(&readSet);
-  FD_ZERO(&writeSet);
-  FD_ZERO(&errSet);
-  FD_SET(fd, &readSet);
-  FD_SET(fd, &writeSet);
-  FD_SET(fd, &errSet);
-
-  struct timeval tv = {0, 0};
-  int r = select(fd + 1, &readSet, &writeSet, &errSet, &tv);
-  if (r < 0) return 0;
-
-  short ev = 0;
-  if (FD_ISSET(fd, &readSet))  ev |= EV_READ;
-  if (FD_ISSET(fd, &writeSet)) ev |= EV_WRITE;
-  if (FD_ISSET(fd, &errSet))   ev |= EV_ERROR;
-  return ev;
 }
 
 bool HttpClientLocal::send(const HttpRequest& request) {

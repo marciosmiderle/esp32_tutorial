@@ -47,10 +47,10 @@ void DHTView::logValues() {
     break;
   };
 
-  console.printf("DHT22 Temp = %.1f°C Umid = %.1f%% I.C. = %.1f P.Orv = %.1f°C Conf = %s",
+  console->printf("DHT22 Temp = %.1f°C Umid = %.1f%% I.C. = %.1f P.Orv = %.1f°C Conf = %s",
                 newValues.temperature, newValues.humidity, heatIndex, dewPoint,
                 comfortStatus.c_str());
-  console.println("");
+  console->println("");
 }
 
 void DHTView::addError(String error) {
@@ -58,8 +58,8 @@ void DHTView::addError(String error) {
 }
 
 void DHTView::logErrors() {
-  console.print(errors);
-  console.println("");
+  console->print(errors);
+  console->println("");
   errors = "";
 }
 

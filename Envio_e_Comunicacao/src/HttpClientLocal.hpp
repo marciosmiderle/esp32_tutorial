@@ -25,6 +25,7 @@ public:
   bool send(const HttpRequest& request);
 
   bool isConnected() const;
+
   const char* getLastResponse() const;  // agora: "HTTP <código>" ou texto do erro
   int pending() const;
   int dropped() const;
@@ -57,10 +58,6 @@ private:
 
   int sendRequest(const HttpRequest& request);
   void setupHttpClient();
-
-  static const short EV_READ  = 0x01;
-  static const short EV_WRITE = 0x02;
-  static const short EV_ERROR = 0x04;
 
   static const size_t MAX_HEAD = 96;
   static const size_t SEND_CHUNK = 512;

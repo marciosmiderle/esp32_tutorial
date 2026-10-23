@@ -1,4 +1,5 @@
 #include "HttpTestServer.hpp"
+#include "os_posix_compat.hpp"
 
 HttpTestServer::~HttpTestServer() {
   if (!stop) {

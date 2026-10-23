@@ -5,7 +5,9 @@
 #include <NetworkClient.h>
 #include <PubSubClient.h>
 #include "Message.hpp"
+#include "MqttMessage.hpp"
 #include "RetryLogic.hpp"
+#include <deque>
 
 typedef std::function<void(const char* topic, const byte* payload, unsigned int length)> MqttCallback;
 
@@ -29,6 +31,8 @@ public:
 
   void connect();
   void disconnect();
+  bool sendMessage(const MqttMessage& msg);
+
   bool publishTelemetry(const Message& message);
   bool publishEvent(const char* eventType, const char* eventData);
   virtual bool publishLog(const char* data, size_t length);
@@ -49,10 +53,13 @@ private:
   const char* logTopic;
   MqttCallback userCallback;
 
+  size_t maxQueue;
+  std::deque<MqttMessage> queue;
+  size_t droppedCount = 0;
+
   static MqttClient* instance;
-  static void mqttCallbackWrapper(char* topic, byte* payload, unsigned int length);
-  void handleCommand(char* topic, byte* payload, unsigned int length);
-  bool ensureConnection();
+  bool sendQueuedMessage(MqttMessage& msg);
+  static void pubSubClientCallback(char* topic, byte* payload, unsigned int length);
   void buildUniqueClientId();
 
 private:

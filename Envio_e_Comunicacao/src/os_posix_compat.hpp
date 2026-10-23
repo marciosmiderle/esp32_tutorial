@@ -83,6 +83,35 @@ namespace os_posix_compat {
 #endif
   }
 
+  inline void set_last_error(int error_code) {
+#ifdef _WIN32
+    WSASetLastError(error_code);
+#else
+    errno = error_code;
+#endif
+  }
+
+  inline bool is_wouldblock(int error_code) {
+#ifdef _WIN32
+    return (error_code == WSAEWOULDBLOCK || 
+            error_code == 10035 || 
+            error_code == EWOULDBLOCK || 
+            error_code == EAGAIN);
+#else
+    return (error_code == EWOULDBLOCK || error_code == EAGAIN);
+#endif
+  }
+
+  inline bool is_inprogress(int error_code) {
+#ifdef _WIN32
+    return (error_code == WSAEWOULDBLOCK || 
+            error_code == 10035 || 
+            error_code == EINPROGRESS);
+#else
+    return (error_code == EINPROGRESS);
+#endif
+  }
+
   inline const char* inet_ntop(int af, const void* src, char* dst, size_t size) {
     if (af != AF_INET) return nullptr;
 #ifdef _WIN32
