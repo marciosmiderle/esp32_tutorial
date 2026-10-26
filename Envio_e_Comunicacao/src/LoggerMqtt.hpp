@@ -3,7 +3,10 @@
 #include "Logger.hpp"
 #include "MqttClient.hpp"
 
+inline constexpr const char* MQTT_LOGS_TOPIC = "estacao/logs";
+
 class LoggerMqtt : public LoggerBase {
+private:
   static const int MAX_BUFFER = 2048;
 
   MqttClient& logger;

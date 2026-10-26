@@ -4,12 +4,16 @@
 MqttStream::MqttStream(MqttClient& _client) :
   client(_client) {
 
+  client.addSubscribeTopic(MQTT_STREAM_TOPIC_IN);
   client.setCallback([this] (const char* topic, const byte* payload, unsigned int length) {
-    if (topicIn == topic) {
+    const String fqtn = client.getFullQualifiedTopicName(MQTT_STREAM_TOPIC_IN);
+    if (fqtn == topic) {
       messageIn.write(payload, length);
     }
   });
 }
+
+MqttStream::~MqttStream() {}
 
 int MqttStream::available() {
   return messageIn.available();
@@ -28,10 +32,10 @@ size_t MqttStream::write(uint8_t val) {
     return 0;
   }
 
-  messageOut += val;
+  messageOut += static_cast<char>(val);
 
   if (val == '\n') {
-    MqttMessage msg(topicOut, messageOut);
+    MqttMessage msg(MQTT_STREAM_TOPIC_OUT, messageOut);
     client.sendMessage(msg);
     size_t len = messageOut.length();
     messageOut = "";
@@ -39,4 +43,8 @@ size_t MqttStream::write(uint8_t val) {
   }
 
   return 1;
+}
+
+String MqttStream::getMessageOut() const {
+  return messageOut;
 }

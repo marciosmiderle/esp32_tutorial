@@ -32,7 +32,10 @@ void LoggerMqtt::truncateTheOldestData(size_t size) {
 }
 
 void LoggerMqtt::update() {
-  if (unsent.length() > 0 && logger.publishLog(unsent.c_str(), unsent.length())) {
-    unsent = "";
+  if (unsent.length() > 0) {
+    MqttMessage msg(MQTT_LOGS_TOPIC, unsent);
+    if(logger.sendMessage(msg)) {
+      unsent = "";
+    }
   }
 }

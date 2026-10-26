@@ -9,14 +9,16 @@
 #include "RetryLogic.hpp"
 #include <deque>
 
+inline constexpr const char* MQTT_BROKER    = "broker.hivemq.com";  // Broker público HiveMQ
+inline constexpr const int   MQTT_PORT      = 1883;
+inline constexpr const char* MQTT_CLIENT_ID = "estacao_meteorologica_001";
+inline constexpr const int   MQTT_CLIENT_MAX_QUEUE = 30;
+
 typedef std::function<void(const char* topic, const byte* payload, unsigned int length)> MqttCallback;
 
 class MqttClient {
 protected:
   MqttClient(const char* broker, int port, const char* clientId,
-             const char* telemetryTopic, const char* eventTopic,
-             const char* commandTopic, const char* commandSubscribeTopic,
-             const char* _logTopic,
              int maxRetries = 5, unsigned long retryTimeoutMs = 3000,
              unsigned long tryLaterTimeoutMs = 30000);
   virtual ~MqttClient();
@@ -29,13 +31,13 @@ public:
   void restart();
   void update();
 
+  String getFullQualifiedTopicName(const char* topic);
   void connect();
-  void disconnect();
-  bool sendMessage(const MqttMessage& msg);
+  void addSubscribeTopic(const String topic);
 
-  bool publishTelemetry(const Message& message);
-  bool publishEvent(const char* eventType, const char* eventData);
-  virtual bool publishLog(const char* data, size_t length);
+  void disconnect();
+  virtual bool sendMessage(const MqttMessage& msg);
+
   void setCallback(MqttCallback callback);
   bool isConnected();
 
@@ -46,25 +48,21 @@ private:
   int port;
   const char* clientId;
   char resolvedClientId[48];   // ID único em runtime
-  const char* telemetryTopic;
-  const char* eventTopic;
-  const char* commandTopic;
-  const char* commandSubscribeTopic;
-  const char* logTopic;
+  String subscribedTopics;
   MqttCallback userCallback;
 
-  size_t maxQueue;
   std::deque<MqttMessage> queue;
   size_t droppedCount = 0;
 
   static MqttClient* instance;
+
+  RetryLogic retry;
+  bool started;
+
   bool sendQueuedMessage(MqttMessage& msg);
   static void pubSubClientCallback(char* topic, byte* payload, unsigned int length);
   void buildUniqueClientId();
-
-private:
-  RetryLogic retry;
-  bool started;
+  void subscribeToTopics();
 };
 
 #define MQTT MqttClient::getInstance()

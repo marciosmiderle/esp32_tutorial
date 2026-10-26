@@ -1,7 +1,7 @@
 #include "Command.hpp"
 #include <ctype.h>
 
-Command Command::fromCommandLine(const String& input, void* sender) {
+Command Command::fromCommandLine(const String& input, Console* sender) {
   Command cmd;
   cmd.sender = sender;
 

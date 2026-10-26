@@ -3,10 +3,7 @@
 #include "HttpRequest.hpp"
 #include "Logger.hpp"
 #include "MqttClient.hpp"
-
-static const char* PUB_HOST = "httpbin.org"; // API de teste que ecoa o payload
-static const int   PUB_PORT = 80;
-static const char* PUB_ENDP = "/post";
+#include <ArduinoJson.h>
 
 Publisher& Publisher::getInstance() {
   static Publisher instance;
@@ -56,18 +53,30 @@ void Publisher::publishTelemetry() {
     lastSendTime = currentTime;
 
     currentMessage.buildFrom(*estacao);
+    const String currentContent = currentMessage.toJson();
 
-    HttpRequest req("POST", currentMessage.toJson());
+    HttpRequest req("POST", currentContent);
     req.addHeader("Content-Type", "application/json");
 
     httpClient.send(req);
     
-    if (MQTT.isConnected()) {
-      Log.println("\n--- Publicando via MQTT ---");
-      MQTT.publishTelemetry(currentMessage);
-    } else {
-      Log.println("\n[MQTT] Ainda nao conectado (update() esta tentando)");
-    }
+    MqttMessage msg(MQTT_TELEMETRY_TOPIC, currentContent);
+    MQTT.sendMessage(msg);
+  }
+}
+
+void Publisher::publishEvent(const char* eventType, const char* eventData) {
+  if (MQTT.isConnected()) {
+    JsonDocument doc;
+    doc["type"] = eventType;
+    doc["data"] = eventData;
+    doc["timestamp"] = millis();
+
+    String jsonPayload;
+    serializeJson(doc, jsonPayload);
+
+    MqttMessage msg(MQTT_EVENT_TOPIC, jsonPayload);
+    MQTT.sendMessage(msg);
   }
 }
 

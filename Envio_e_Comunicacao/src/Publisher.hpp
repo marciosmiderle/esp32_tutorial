@@ -4,6 +4,12 @@
 #include "Estacao.hpp"
 #include "Message.hpp"
 
+inline constexpr const char* PUB_HOST = "httpbin.org"; // API de teste que ecoa o payload
+inline constexpr const int   PUB_PORT = 80;
+inline constexpr const char* PUB_ENDP = "/post";
+inline constexpr const char* MQTT_TELEMETRY_TOPIC = "estacao/telemetria";
+inline constexpr const char* MQTT_EVENT_TOPIC = "estacao/eventos";
+
 class Publisher {
   HttpClientLocal httpClient;
 
@@ -25,6 +31,8 @@ public:
   void update();
 
   void publishTelemetry();
+  void publishEvent(const char* eventType, const char* eventData);
+
   void setEstacao(Estacao* est);
 };
 

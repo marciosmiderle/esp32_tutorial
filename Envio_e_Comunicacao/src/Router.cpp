@@ -25,11 +25,15 @@ void Router::processar() {
   auto it = rotas.find(currentCommand.name);
   if (it != rotas.end()) {
     it->second(currentCommand);
-  }
-  else {
-    Log.print("[RTR] Comando inexistente: '");
-    Log.print(currentCommand.name);
-    Log.println("'");
+  } else {
+    it = rotas.find("default");
+    if (it != rotas.end()) {
+      it->second(currentCommand);
+    } else {
+      Log.print("[RTR] Comando inexistente: '");
+      Log.print(currentCommand.name);
+      Log.println("'");
+    }
   }
   currentCommand.clear();
 }

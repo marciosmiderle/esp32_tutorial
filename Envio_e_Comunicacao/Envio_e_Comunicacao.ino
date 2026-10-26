@@ -110,16 +110,12 @@ void setupPir() {
   pir.motionStartEvent = []() {
     est.consolida();
     // Publica evento de movimento detectado
-    if (MQTT.isConnected()) {
-      MQTT.publishEvent("motion_start", "Movimento detectado");
-    }
+    Pub.publishEvent("motion_start", "Movimento detectado");
   };
   pir.motionStopEvent = []() {
     est.consolida();
     // Publica evento de movimento cessado
-    if (MQTT.isConnected()) {
-      MQTT.publishEvent("motion_stop", "Movimento cessado");
-    }
+    Pub.publishEvent("motion_stop", "Movimento cessado");
   };
 }
 
@@ -179,22 +175,22 @@ void setupPublisher() {
   Pub.setEstacao(&est);
 }
 
-void consoleInput() {
-  return;
+void consoleInput(StreamString dbgCmd, Console* out) {
 
-  if (Serial.available() > 0) {
-    char comando = Serial.read();
+  if (dbgCmd.available() > 0) {
+    char comando = dbgCmd.read();
     if (comando == 'n') {
       ntcBtn.buttonReleased();
     }
     if (comando == 'd') {
-      comando = Serial.peek();
+      comando = dbgCmd.peek();
       if (comando == 'f') {  // df <enter> simula falha, d depois mostra a falha
         dht.testing_setSamplingInFailAndReadSampleLastTimeOk_toFailState();
         for (int i = 0; i < 30; ++i) {
           dht.addBadRead();
         }
       } else {
+        dhtView.console = out;
         dhtBtn.buttonReleased();
       }
     }
@@ -205,7 +201,7 @@ void consoleInput() {
       estView.invalidate();
     }
     if (comando == 'w') {
-      comando = Serial.peek();
+      comando = dbgCmd.peek();
       if (comando == 's') {
         NetMgr.start();
       }
@@ -214,7 +210,7 @@ void consoleInput() {
       }
     }
     if (comando == 'q') {
-      comando = Serial.peek();
+      comando = dbgCmd.peek();
       if (comando == 's') {
         MQTT.connect();
       }
@@ -227,13 +223,13 @@ void consoleInput() {
     }
 
     if (comando == 'o') {
-      comando = Serial.peek();
+      comando = dbgCmd.peek();
       if (comando == 'm') {
-        Serial.read();
+        dbgCmd.read();
         ota.markOk();
       }
       if (comando == 'i') {
-        Serial.read();
+        dbgCmd.read();
         ota.markInvalidReboot();
       }
     }
@@ -241,8 +237,8 @@ void consoleInput() {
     if (comando == 'l') {
       String tp = "Logger";
       LoggerBase* obj = &Log;
-      if (Serial.available() > 0) {
-        comando = Serial.read();
+      if (dbgCmd.available() > 0) {
+        comando = dbgCmd.read();
         if (comando == '0') {
           obj = logToSer0;
           tp = "LoggerSerial";
@@ -251,8 +247,8 @@ void consoleInput() {
           obj = logToMqtt;
           tp = "LoggerMqtt";
         }
-        if (Serial.available() > 0) {
-          comando = Serial.read();
+        if (dbgCmd.available() > 0) {
+          comando = dbgCmd.read();
           if (comando == 's') {
             obj->enable();
             Log.printf("[LOG] iniciado   para %s\n", tp.c_str());
@@ -287,39 +283,39 @@ void setupRouter() {
 
   RTR.on("firmware_update_stop", [](const Command& cmd) {
       if (ota.stopUpdate()) {
-        MQTT.publishEvent("ota", "update cancelado");
+        Pub.publishEvent("ota", "update cancelado");
       } else {
-        MQTT.publishEvent("ota", ota.getLastError());
+        Pub.publishEvent("ota", ota.getLastError());
       }
     });
 
   RTR.on("firmware_update", [](const Command& cmd) {
       if (cmd.getArgsCount() <= 0) {
         Log.println("[COMANDO] Uso: firmware_update <url_do_bin>");
-        MQTT.publishEvent("ota", "uso: firmware_update <url>");
+        Pub.publishEvent("ota", "uso: firmware_update <url>");
         return;
       }
       const String& url = cmd.args[0];
       if (ota.startUpdate(url.c_str())) {
-        MQTT.publishEvent("ota", "download iniciado");
+        Pub.publishEvent("ota", "download iniciado");
       } else {
-        MQTT.publishEvent("ota", ota.getLastError());
+        Pub.publishEvent("ota", ota.getLastError());
       }
     });
 
   RTR.on("firmware_mark_ok", [](const Command& cmd) {
       if (ota.markOk()) {
-        MQTT.publishEvent("ota", "firmware marcado como valido");
+        Pub.publishEvent("ota", "firmware marcado como valido");
       } else {
-        MQTT.publishEvent("ota", "mark ok falhou");
+        Pub.publishEvent("ota", "mark ok falhou");
       }
     });
 
   RTR.on("firmware_mark_invalid_reboot", [](const Command& cmd) {
       if (ota.markInvalidReboot()) {
-        MQTT.publishEvent("ota", "firmware marcado como valido, reboot");
+        Pub.publishEvent("ota", "firmware marcado como valido, reboot");
       } else {
-        MQTT.publishEvent("ota", "firmware marcado como valido falhou");
+        Pub.publishEvent("ota", "firmware marcado como valido falhou");
       }
     });
 
@@ -333,8 +329,14 @@ void setupRouter() {
 
   RTR.on("read_now", [](const Command& cmd) {
       Log.println("[COMANDO] Mostrando a leitura ambiental atual da estação");
-      estView.console = (Console*)cmd.sender;
+      estView.console = cmd.sender;
       estView.invalidate();
+    });
+
+  RTR.on("default", [](const Command& cmd) {
+      StreamString scmd;
+      scmd += cmd.name;
+      consoleInput(scmd, cmd.sender);
     });
 }
 
@@ -375,7 +377,6 @@ void setup() {
 }
 
 void loop() {
-  consoleInput();
   ntcBtn.processInput();
   dhtBtn.processInput();
 

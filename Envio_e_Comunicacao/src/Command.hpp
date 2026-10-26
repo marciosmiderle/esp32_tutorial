@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "Console.hpp"
 
 class Command {
 public:
@@ -9,9 +10,9 @@ public:
   String name;
   String args[MAX_ARGS];
   size_t argsCount = 0;
-  void* sender;
+  Console* sender;
 
-  static Command fromCommandLine(const String& input, void* sender = nullptr);
+  static Command fromCommandLine(const String& input, Console* sender = nullptr);
   bool isEmpty();
   void clear();
   int getArgsCount() const;

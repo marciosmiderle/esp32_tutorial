@@ -1,22 +1,7 @@
 #include "CppUTest/TestHarness.h"
 #include "CppUTestExt/MockSupport.h"
 #include "LoggerMqtt.hpp"
-#include "MqttClient.hpp"
-
-// Redefinição do Mock para usar CppUMock
-class MqttClientMock : public MqttClient {
-public:
-    MqttClientMock() : MqttClient("", 0, "", "", "", "", "", "") {}
-    virtual ~MqttClientMock() {};
-
-    bool publishLog(const char* data, size_t length) override {
-        mock()
-            .actualCall("publishLog")
-            .withStringParameter("data", data)
-            .withParameter("length", (int)length);
-        return mock().boolReturnValue();
-    }
-};
+#include "MqttClientMock.hpp"
 
 TEST_GROUP(LoggerMqttTest)
 {
@@ -39,12 +24,14 @@ TEST_GROUP(LoggerMqttTest)
 
 TEST(LoggerMqttTest, SimpleWriteAndPublish)
 {
-    const char* msg = "hello";
-    logger->write((const uint8_t*)msg, 5);
+    const char* content = "hello";
+    logger->write((const uint8_t*)content, 5);
 
-    mock().expectOneCall("publishLog")
-        .withStringParameter("data", "hello")
-        .withParameter("length", 5)
+    MqttMessage msg(MQTT_LOGS_TOPIC, content);
+    mock().expectOneCall("sendMessage")
+        .withParameter("msg.topic", msg.topic)
+        .withParameter("msg.content", msg.content)
+        .ignoreOtherParameters()
         .andReturnValue(true);
 
     logger->update();
@@ -74,8 +61,8 @@ TEST(LoggerMqttTest, BufferOverflowFIFO)
     STRCMP_EQUAL(b.substring(0, 5).c_str(), "AAAAA");
     STRCMP_EQUAL(b.substring(b.length() - 10).c_str(), "1234567890");
 
-    mock().expectOneCall("publishLog")
-        .withParameter("length", 2048)
+    mock().expectOneCall("sendMessage")
+        .withParameter("msg.length", 2048)
         .ignoreOtherParameters()
         .andReturnValue(true);
 
@@ -95,8 +82,8 @@ TEST(LoggerMqttTest, ChunkLargerThanBuffer)
     CHECK_EQUAL(b.length(), 2048);
     STRCMP_EQUAL(b.substring(b.length() - 5).c_str(), "YYYYY");
 
-    mock().expectOneCall("publishLog")
-        .withParameter("length", 2048)
+    mock().expectOneCall("sendMessage")
+        .withParameter("msg.length", 2048)
         .ignoreOtherParameters()
         .andReturnValue(true);
 
