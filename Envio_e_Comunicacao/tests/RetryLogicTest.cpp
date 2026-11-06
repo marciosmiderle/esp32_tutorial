@@ -8,7 +8,7 @@ TEST_GROUP(RetryLogicTest)
     const unsigned long retryTimeoutMs = 3000;
     const unsigned long tryLaterTimeoutMs = 30000;
 
-    RetryLogic retry{maxRetries, retryTimeoutMs, tryLaterTimeoutMs};
+    RetryLogic retry{maxRetries, retryTimeoutMs, tryLaterTimeoutMs, "[RL] "};
 
     void setup()
     {
@@ -122,7 +122,7 @@ TEST(RetryLogicTest, ResetCancelsTryLater)
 
 TEST(RetryLogicTest, ZeroMaxRetriesGoesStraightToTryLater)
 {
-    RetryLogic noRetries(0, retryTimeoutMs, tryLaterTimeoutMs);
+    RetryLogic noRetries(0, retryTimeoutMs, tryLaterTimeoutMs, "[RL] ");
 
     CHECK_FALSE(noRetries.canRetry());
     CHECK_TRUE(noRetries.isInTryLater());

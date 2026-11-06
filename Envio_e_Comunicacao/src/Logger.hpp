@@ -21,6 +21,11 @@ public:
   void enable() override;
 
   void addLogger(LoggerBase* _logger);
+
+  using Print::println;
+  size_t println(const char* prefix, const char* msg);
+  size_t println(const char* prefix, const char* msg, const char* suffix);
+  size_t println(const char* prefix, const char* msg, const int val);
 };
 
 #define Log Logger::getInstance()

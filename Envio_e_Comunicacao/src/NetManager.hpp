@@ -29,6 +29,8 @@ public:
   void retryReset();
 
 private:
+  static constexpr const char* NM = "[NM] ";
+
   RetryLogic retry;
   bool started;
 };

@@ -2,7 +2,7 @@
 
 class RetryLogic {
 public:
-  RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned long tryLaterTimeoutMs);
+  RetryLogic(const int maxRetries, const unsigned long retryTimeoutMs, const unsigned long tryLaterTimeoutMs, const char* logPrefix);
 
   bool hasRetriesLeft() const;
   bool retryTimeoutHasElapsed() const;
@@ -16,10 +16,12 @@ public:
   void reset();
 
 private:
-  int maxRetries;
+  const int maxRetries;
+  const unsigned long retryTimeoutMs;
+  const unsigned long tryLaterTimeoutMs;
+  const char* logPrefix;
+
   int retryCount = 0;
-  unsigned long retryTimeoutMs;
-  unsigned long tryLaterTimeoutMs;
   unsigned long lastAttemptMs = 0;
   unsigned long tryLaterUntilMs = 0;
 };

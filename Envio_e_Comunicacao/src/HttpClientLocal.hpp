@@ -3,19 +3,23 @@
 #include <Arduino.h>
 #include "HTTPClientEx.hpp"
 #include <deque>
+#include <functional>
 
 #include "HttpRequest.hpp"
 #include "RetryLogic.hpp"
 
-enum class Phase { Idle = 0, Resolving, Connecting, Ready, Sending, Receiving, Done, Failed };
-
 class HttpClientLocal {
 public:
-  HttpClientLocal(String _host = "localhost", uint16_t _port = 80, String _endp = "/",
+  enum class Phase {Idle = 0, Resolving, Connecting, Ready, Sending, Receiving, Done, Failed};
+
+  HttpClientLocal(String _host, uint16_t _port, String _endpoint,
                   size_t maxQueue = 16, int maxRetries = 5,
                   unsigned long retryTimeoutMs = 2000,
                   unsigned long tryLaterTimeoutMs = 30000);
   virtual ~HttpClientLocal();
+
+  void setHostPortEndpoint(String _host, uint16_t _port, String _endpoint);
+  void setHostPortEndpointFromUri(String _uri);
 
   void start();
   void stop();
@@ -23,30 +27,32 @@ public:
   void update();
 
   bool send(const HttpRequest& request);
-
+  std::function<void(bool&)> onData = [](bool& isComplete) {isComplete = true;}; //finishes req
   bool isConnected() const;
 
   const char* getLastResponse() const;  // agora: "HTTP <código>" ou texto do erro
   int pending() const;
   int dropped() const;
   Phase getPhase() const;
-  size_t getContentLengh() const;
+  size_t getContentLength() const;
+  String getContent() const;
+  String getHost() const;
+  uint16_t getPort() const;
+  String getEndp() const;
   int getHttpCode() const;
   int getRequestReturn() const;
 
   NetworkClient& getNetworkClient();
+  HTTPClientEx& getHTTPClient();
 
 private:
   NetworkClient nc;
   HTTPClientEx http;
   int requestReturn;
   int httpCode;
-  size_t contentLengh = 0;
+  size_t contentLength = 0;
   Phase phase = Phase::Idle;
-  String host;
   IPAddress hostIP;
-  uint16_t port;
-  String endp;
   RetryLogic retry;
   size_t maxQueue;
 
@@ -58,13 +64,10 @@ private:
 
   int sendRequest(const HttpRequest& request);
   void setupHttpClient();
+  void setupHttpClientFromUri(String _uri);
+  void setupHttpClientOptions();
 
-  static const size_t MAX_HEAD = 96;
-  static const size_t SEND_CHUNK = 512;
-  static const size_t RECV_CHUNKS = 4;
-
-  unsigned long connectTimeoutMs_;
-  unsigned long responseTimeoutMs_;
+  static constexpr const char* HTTP = "[HTTP] ";
 
   bool initiateConnection();
   void initiateNameResolution();

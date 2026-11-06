@@ -3,71 +3,69 @@
 #include <Arduino.h>
 #include <functional>
 #include "CheckSum.hpp"
-#include <HTTPClient.h>
+#include "HttpClientLocal.hpp"
 #include "RetryLogic.hpp"
 
 class OtaUpdater {
 public:
-  enum class State {
-    Idle,
-    FetchingHash,
-    StartDownload,
-    Downloading,
-    DownloadValid,
-    Success,
+  enum class State {Idle = 0, FetchingHash, Downloading, DownloadValidation, Reboot};
+  enum class StepState {
+    Idle = 0,
+    Starting,
+    Running,
+    Running_2,
+    Finished,
     Failed
   };
 
   using StatusCallback = std::function<void(State state, const char* detail)>;
 
-  OtaUpdater(int maxRetries = 5,
-             unsigned long retryTimeoutMs = 3000,
-             unsigned long tryLaterTimeoutMs = 30000);
+  OtaUpdater(const int maxRetries = 5,
+             const unsigned long retryTimeoutMs = 3000,
+             const unsigned long tryLaterTimeoutMs = 30000);
 
-  void begin();
-  void setStatusCallback(StatusCallback cb);
+  void start();
+  void stop();
+  void restart();
+  void update();
 
   bool startUpdate(const char* firmwareUrl);
   bool stopUpdate();
-
   bool markOk();
   bool markInvalidReboot();
 
-  void abort();
-  void update();
-
-  State getState() const { return state; }
-  bool isBusy() const;
-  float getProgress() const;
-  const char* getLastError() const { return lastError; }
+  State getState() const;
+  StepState getStepState() const;
+  bool getDownloadComplete() const;
 
 private:
-  static constexpr size_t kChunkSize = 4096;
+  bool isUpdating() const;
+  float getProgress() const;
 
-  HTTPClient http;
-  State state = State::Idle;
-  CheckSum sum;
+  static constexpr size_t kChunkSize = 4096;
+  static constexpr size_t maxCheckSumFileSize = 2048;
+  static constexpr unsigned long REBOOT_DELAY_MS = 1000;
+  static constexpr const char* OTA = "[OTA] ";
+
   RetryLogic retry;
-  StatusCallback statusCb;
+  bool started;
+
+  HttpClientLocal http;
+  State state = State::Idle;
+  StepState stepState = StepState::Idle;
+  CheckSum sum;
 
   String firmwareUrl;
 
-  size_t totalSize = 0;
   size_t downloaded = 0;
+  bool downloadComplete = false;
 
   char lastError[96] = {0};
   unsigned long lastProgressLogMs = 0;
 
-  void setState(State s, const char* detail = nullptr);
-  void setError(const char* msg);
-  void clearError();
-
-  void savePending();
-  void clearPending();
-  bool loadPending();
-
-  bool stepFetchHash();
-  bool startDownload();
-  bool stepDownload();
-  bool downloadValid();
+  void stepFetchHash();
+  void startDownload();
+  void stepDownload();
+  void stepDownloadValidation();
+  void stepReboot();
 };

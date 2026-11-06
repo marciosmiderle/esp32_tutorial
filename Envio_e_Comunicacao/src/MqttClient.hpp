@@ -42,6 +42,10 @@ public:
   bool isConnected();
 
 private:
+  static constexpr const char* MQTTp = "[MQTT] ";
+  static constexpr unsigned int afterStartAcquiesceTime_ms = 2000;
+  unsigned int lastStartTime_ms = 0;
+
   NetworkClient netClient;
   PubSubClient client;
   const char* broker;
@@ -59,6 +63,7 @@ private:
   RetryLogic retry;
   bool started;
 
+  bool afterStartAcquiesceTimeHasElapsed();
   bool sendQueuedMessage(MqttMessage& msg);
   static void pubSubClientCallback(char* topic, byte* payload, unsigned int length);
   void buildUniqueClientId();

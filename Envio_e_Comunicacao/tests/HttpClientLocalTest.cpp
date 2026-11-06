@@ -3,6 +3,7 @@
 #include "HttpClientLocal.hpp"
 #include "Message.hpp"
 #include "HttpTestServer.hpp"
+#include "Logger.hpp"
 #include "util.hpp"
 
 #include "CppUTest/TestHarness.h"
@@ -17,6 +18,8 @@ static HttpRequest makeRequest(int n) {
 //static String bodyOf(int n) { return makeRequest(n).toJson(); }
 
 TEST_GROUP(HttpClientLocal) {
+  using Phase = HttpClientLocal::Phase;
+
   static constexpr const char* HOSTNAME = "localhost";
   static const           int   PORT     = HttpTestServer::PORT;
   static constexpr const char* URI      = "/api/data";
@@ -67,7 +70,7 @@ TEST_GROUP(HttpClientLocal) {
   }
 
   void runUntilQueueDrained() {
-    while_timed(std::chrono::milliseconds(5000), [this]() {
+    while_timed(5000, [this]() {
       client->update();
       if (client->pending() == 0)
         return false;
@@ -84,15 +87,24 @@ TEST_GROUP(HttpClientLocal) {
     FAIL("transporte não voltou a Idle dentro do limite de iterações");
   }
 
-  void wait_until_client_phase_is(Phase ph, unsigned long timeout_ms = 1000) {
-    while_timed(std::chrono::milliseconds(timeout_ms), [this, &ph]() {
+  void update_timed_until_client_phase_is(
+      Phase ph,
+      unsigned long timeout_ms = 1000,
+      unsigned long forward_millis_by_ms = 100,
+      std::function<bool()> isProgressing = []() { return false; }) {
+
+    while_timed(timeout_ms, [this, &ph, &forward_millis_by_ms]() {
       client->update();
+      millis_forward(forward_millis_by_ms);
       if (client->getPhase() == ph) {
         return false;
       }
       return true;
-    });
-    millis_forward(100);
+    }, isProgressing);
+  }
+
+  void update_timed_until_client_phase_is(Phase ph, std::function<bool()> isProgressing) {
+    update_timed_until_client_phase_is(ph, 1000, 100, isProgressing);
   }
 
   SimpleString StringFrom(Phase ph) {
@@ -247,7 +259,7 @@ TEST(HttpClientLocal, stop_preserva_fila_start_retoma) {
   client->send(makeRequest(2));
   CHECK_EQUAL(Phase::Idle, client->getPhase());
 
-  wait_until_client_phase_is(Phase::Ready);
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   client->stop();
   CHECK_TRUE(2 == client->pending());
@@ -263,7 +275,7 @@ TEST(HttpClientLocal, release_from_queued_after_receiving) {
   client->start();
   client->send(makeRequest(4321));
   client->send(makeRequest(9876));
-  wait_until_client_phase_is(Phase::Ready);
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   CHECK_TRUE(2 == client->pending());
 
@@ -271,7 +283,7 @@ TEST(HttpClientLocal, release_from_queued_after_receiving) {
   client->update(); // *ready -> sending
   client->update(); // *sending -> receiving
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
-  CHECK_TRUE(2 == client->getContentLengh());
+  CHECK_TRUE(2 == client->getContentLength());
   CHECK_TRUE(HTTP_CODE_OK == client->getHttpCode());
 
   CHECK_TRUE(2 == client->pending());
@@ -282,7 +294,7 @@ TEST(HttpClientLocal, release_from_queued_after_receiving) {
 TEST(HttpClientLocal, no_release_from_queued_on_server_busy) {
   client->start();
   client->send(makeRequest(5678));
-  wait_until_client_phase_is(Phase::Ready);
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   CHECK_TRUE(1 == client->pending());
 
@@ -292,7 +304,7 @@ TEST(HttpClientLocal, no_release_from_queued_on_server_busy) {
 
   CHECK_TRUE(HTTPC_ERROR_CONNECTION_LOST == client->getRequestReturn());
   CHECK_TRUE(503 == client->getHttpCode());
-  CHECK_TRUE(0 == client->getContentLengh());
+  CHECK_TRUE(0 == client->getContentLength());
 
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
   client->update(); // *receiving -> idle
@@ -306,15 +318,15 @@ TEST(HttpClientLocal, rejeicao4xx_descarta_e_continua_a_fila) {
   client->send(makeRequest(5678));
   client->send(makeRequest(8765));
   server.response = HttpTestServer::nokResponse400();
-  wait_until_client_phase_is(Phase::Ready, 5000);
+  update_timed_until_client_phase_is(Phase::Ready, 5000);
   CHECK_EQUAL(Phase::Ready, client->getPhase()); // before consume 400 code
   CHECK_TRUE(2 == client->pending());
-  wait_until_client_phase_is(Phase::Ready, 5000);
+  update_timed_until_client_phase_is(Phase::Ready, 5000);
   CHECK_EQUAL(Phase::Ready, client->getPhase()); // after consume 400 code
   CHECK_TRUE(1 == client->pending());
 
   server.response = HttpTestServer::okResponse();
-  wait_until_client_phase_is(Phase::Ready);
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   CHECK_TRUE(0 == client->pending());
 }
@@ -329,10 +341,10 @@ TEST(HttpClientLocal, connection_phases) {
   client->update();
   CHECK_EQUAL(Phase::Resolving, client->getPhase());
 
-  wait_until_client_phase_is(Phase::Connecting);
+  update_timed_until_client_phase_is(Phase::Connecting);
   CHECK_EQUAL(Phase::Connecting, client->getPhase());
 
-  wait_until_client_phase_is(Phase::Ready);
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
 
   CHECK_EQUAL(Phase::Ready, client->getPhase());
@@ -341,7 +353,7 @@ TEST(HttpClientLocal, connection_phases) {
   CHECK_EQUAL(Phase::Sending, client->getPhase());
   client->update();
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
-  CHECK_TRUE(2 == client->getContentLengh());
+  CHECK_TRUE(2 == client->getContentLength());
   client->update();
   CHECK_EQUAL(Phase::Ready, client->getPhase());
 
@@ -354,15 +366,95 @@ TEST(HttpClientLocal, connection_phases) {
 TEST(HttpClientLocal, PostRecebidoEStatus200Lido) {
   client->start();
   client->send(makeRequest(4321));
-  wait_until_client_phase_is(Phase::Ready);
+  String body;
+  client->onData = [this, &body](bool& isComplete) {
+    body += client->getContent();
+    isComplete = true;
+  };
+
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   server.response = HttpTestServer::okResponse();
   // client->update(); // *ready -> sending
   // client->update(); // *sending -> receiving
-  wait_until_client_phase_is(Phase::Receiving);
+  update_timed_until_client_phase_is(Phase::Receiving);
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
-  CHECK_TRUE(2 == client->getContentLengh());
+  CHECK_TRUE(2 == client->getContentLength());
   client->update(); // ready
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   CHECK_TRUE(HTTP_CODE_OK == client->getHttpCode());
+}
+
+TEST(HttpClientLocal, test_download) {
+  client->setHostPortEndpointFromUri("http://localhost:8080/debug/Envio_e_Comunicacao.ino.bin.md5");
+
+  client->start();
+  client->send(HttpRequest("GET"));
+  String body;
+  int count = 0;
+  client->onData = [this, &body, &count](bool& isComplete) {
+    body += client->getContent();
+    count++;
+    isComplete = true;
+  };
+
+  STRCMP_EQUAL("localhost", client->getHost().c_str());
+  LONGS_EQUAL(8080, client->getPort());
+
+  update_timed_until_client_phase_is(Phase::Receiving);
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+  LONGS_EQUAL(HTTP_CODE_OK, client->getHttpCode());
+
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  LONGS_EQUAL(body.length(), client->getContentLength());
+  LONGS_EQUAL(1, count);
+}
+
+TEST(HttpClientLocal, test_chunked_download) {
+  String uri;
+  uri = "http://localhost:8080/debug/Envio_e_Comunicacao.ino.merged.bin";
+  client->setHostPortEndpointFromUri(uri);
+
+  client->start();
+  client->send(HttpRequest("GET"));
+  int count = 0;
+  int count_previo = 0;
+  int downloaded = 0;
+  static constexpr size_t kChunkSize = 4096;
+  client->onData = [this, &count, &count_previo, &downloaded](bool& isComplete) {
+
+    if (downloaded < client->getContentLength()) {
+      NetworkClient& stream = client->getNetworkClient();
+      size_t avail = stream.available();
+      if (avail == 0) {
+        return;
+      }
+      uint8_t buf[kChunkSize];
+
+      size_t n = stream.readBytes(buf, min(avail, kChunkSize));
+      if (n == 0) return;
+
+      downloaded += n;
+      count_previo = count;
+      count++;
+
+    } else {
+      Log.print("[HttpClientLocalTest] downloaded / total    ");
+      Log.print(downloaded);
+      Log.print(" / ");
+      Log.println(client->getContentLength());
+      isComplete = true;
+    }
+
+  };
+  auto isProgressing = [&count, &count_previo]() { return count > count_previo; };
+
+  update_timed_until_client_phase_is(Phase::Receiving);
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+  LONGS_EQUAL(HTTP_CODE_OK, client->getHttpCode());
+
+  update_timed_until_client_phase_is(Phase::Ready, isProgressing);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  LONGS_EQUAL(downloaded, client->getContentLength());
 }

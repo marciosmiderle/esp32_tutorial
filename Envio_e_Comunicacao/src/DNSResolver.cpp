@@ -140,4 +140,6 @@ void DNSResolver::reset() {
   }
 #endif
   started = false;
+  hostname.clear();
+  hostname.shrink_to_fit();
 }

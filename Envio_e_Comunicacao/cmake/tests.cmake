@@ -21,9 +21,11 @@ target_include_directories(tests PRIVATE
 
 target_compile_options(tests PRIVATE
   -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -O0 -g3 -pipe
+  -fsanitize=address -fno-omit-frame-pointer
   $<$<COMPILE_LANGUAGE:CXX>:-Wno-overloaded-virtual>
   $<$<COMPILE_LANGUAGE:CXX>:-Wno-non-c-typedef-for-linkage>
 )
+target_link_options(tests PRIVATE -fsanitize=address)
 
 # Injeta mocks globais e compatibilidade (ex: printf, ArduinoJson String write)
 target_compile_options(tests PRIVATE

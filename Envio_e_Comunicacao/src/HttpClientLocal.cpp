@@ -3,15 +3,17 @@
 #include "DNSResolver.hpp"
 #include "os_posix_compat.hpp"
 
-HttpClientLocal::HttpClientLocal(String _host, uint16_t _port, String _endp,
+using Phase = HttpClientLocal::Phase;
+
+HttpClientLocal::HttpClientLocal(String _host, uint16_t _port, String _endpoint,
                                  size_t _maxQueue, int maxRetries,
                                  unsigned long retryTimeoutMs,
                                  unsigned long tryLaterTimeoutMs)
   : nc(),
-    host(_host), port(_port), endp(_endp),
-    retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs),
+    retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs, HTTP),
     maxQueue(_maxQueue) {
-  setupHttpClient();
+  setupHttpClientOptions();
+  http.begin(nc, _host, _port, _endpoint);
 }
 
 HttpClientLocal::~HttpClientLocal() {
@@ -19,16 +21,32 @@ HttpClientLocal::~HttpClientLocal() {
   DNS.reset();
 }
 
-void HttpClientLocal::setupHttpClient() {
+void HttpClientLocal::setupHttpClientOptions() {
   http.setConnectTimeout(500);
   http.setTimeout(500);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setReuse(true);
-  http.begin(nc, host, port, endp);
+}
+
+void HttpClientLocal::setHostPortEndpoint(String _host, uint16_t _port, String _endpoint) {
+  stop();
+  setupHttpClientOptions();
+  http.begin(nc, _host, _port, _endpoint);
+}
+
+void HttpClientLocal::setHostPortEndpointFromUri(String _uri) {
+  bool wasStarted = started;
+
+  stop();
+  setupHttpClientOptions();
+  http.begin(nc, _uri);
+
+  started = wasStarted;
 }
 
 void HttpClientLocal::start() {
   started = true;
-  setupHttpClient();
+  http.begin(nc, http.getHost(), http.getPort(), http.getEndp());
 }
 
 void HttpClientLocal::stop() {
@@ -82,8 +100,7 @@ void HttpClientLocal::update() {
       retry.reset();
       return;
     } else {
-      Log.print("[HTTP] connecting to ");
-      Log.println(hostIP);
+      Log.println(HTTP, "connecting to ", hostIP.toString().c_str());
       return;
     }
     return;
@@ -104,7 +121,11 @@ void HttpClientLocal::update() {
     requestReturn  = sendRequest(queue.front());
     httpCode       = http.getHttpCode();
     int contentLen = http.getSize();
-    contentLengh   = contentLen <= 0 ? 0 : contentLen;
+    contentLength   = contentLen <= 0 ? 0 : contentLen;
+
+    lastResponse = "HTTP " + String(httpCode);
+    Log.printf("%slast response %s [tamanho da fila %lu]\n", HTTP, lastResponse.c_str(), (long unsigned)queue.size());
+
     phase = Phase::Receiving;
     retry.reset();
     // retorna pra ser nice
@@ -112,13 +133,11 @@ void HttpClientLocal::update() {
   }
 
   if (phase == Phase::Receiving) {
-    lastResponse = "HTTP " + String(httpCode);
-    Log.printf("[HTTP] last response %s [tamanho da fila %lu]\n", lastResponse.c_str(), (long unsigned)queue.size());
-
     if (httpCode >= 200 && httpCode < 300) {
-      if (httpCode == HTTP_CODE_PARTIAL_CONTENT) {
+      bool isComplete = false;
+      onData(isComplete);
+      if (httpCode == HTTP_CODE_PARTIAL_CONTENT || !isComplete) {
         retry.reset();
-        // onData
         return;
       }
 
@@ -140,7 +159,7 @@ void HttpClientLocal::update() {
       return;
     }
 
-    if (requestReturn >= 0 && contentLengh == 0) {
+    if (requestReturn >= 0 && contentLength == 0) {
       phase = Phase::Ready;
       queue.pop_front();
       retry.reset();
@@ -153,7 +172,7 @@ void HttpClientLocal::update() {
       return;
     }
 
-    Log.println("[HTTP] unhandled return");
+    Log.println(HTTP, "unhandled return");
     phase = Phase::Ready;
     retry.reset();
     return;
@@ -171,7 +190,7 @@ bool HttpClientLocal::initiateConnection() {
 
   struct sockaddr_in sa = {};
   sa.sin_family = AF_INET;
-  sa.sin_port = htons(port);
+  sa.sin_port = htons(http.getPort());
   sa.sin_addr.s_addr = addr;
 
   int r = ::connect(fd, (struct sockaddr*)&sa, sizeof(sa));
@@ -191,7 +210,7 @@ void HttpClientLocal::ao_resolver_dns(const char* name, const char* ip_str, Http
 }
 
 void HttpClientLocal::initiateNameResolution() {
-  DNS.resolve(host.c_str(), (AsyncDNSCallback)ao_resolver_dns, this);
+  DNS.resolve(http.getHost().c_str(), (AsyncDNSCallback)ao_resolver_dns, this);
 }
 
 bool HttpClientLocal::send(const HttpRequest& request) {
@@ -227,8 +246,24 @@ Phase HttpClientLocal::getPhase() const {
   return phase;
 }
 
-size_t HttpClientLocal::getContentLengh() const {
-  return contentLengh;
+size_t HttpClientLocal::getContentLength() const {
+  return contentLength;
+}
+
+String HttpClientLocal::getContent() const {
+  return const_cast<HTTPClientEx&>(http).getString();
+}
+
+String HttpClientLocal::getHost() const {
+  return const_cast<HTTPClientEx&>(http).getHost();
+}
+
+uint16_t HttpClientLocal::getPort() const {
+  return const_cast<HTTPClientEx&>(http).getPort();
+}
+
+String HttpClientLocal::getEndp() const {
+  return const_cast<HTTPClientEx&>(http).getEndp();
 }
 
 int HttpClientLocal::getHttpCode() const {
@@ -241,4 +276,8 @@ int HttpClientLocal::getRequestReturn() const {
 
 NetworkClient& HttpClientLocal::getNetworkClient() {
   return nc;
+}
+
+HTTPClientEx& HttpClientLocal::getHTTPClient() {
+  return http;
 }

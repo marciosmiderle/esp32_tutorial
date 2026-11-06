@@ -10,7 +10,7 @@ MqttClient::MqttClient(const char* _broker, int _port, const char* _clientId,
                        int maxRetries, unsigned long retryTimeoutMs,
                        unsigned long tryLaterTimeoutMs)
   : broker(_broker), port(_port), clientId(_clientId), userCallback({}),
-    retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs), started(false) {
+    retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs, MQTTp), started(false) {
 
   buildUniqueClientId();
 
@@ -30,6 +30,7 @@ MqttClient::~MqttClient() {
 
 void MqttClient::start() {
   started = true;
+  lastStartTime_ms = millis();
 }
 
 void MqttClient::stop() {
@@ -44,6 +45,7 @@ void MqttClient::restart() {
 
 void MqttClient::update() {
   if (!started) return;
+  if (!afterStartAcquiesceTimeHasElapsed()) return;
 
   if (queue.empty())
     return;
@@ -62,6 +64,10 @@ void MqttClient::update() {
   }
 
   connect();
+}
+
+bool MqttClient::afterStartAcquiesceTimeHasElapsed() {
+  return millis() > (lastStartTime_ms + afterStartAcquiesceTime_ms);
 }
 
 bool MqttClient::sendMessage(const MqttMessage& msg) {

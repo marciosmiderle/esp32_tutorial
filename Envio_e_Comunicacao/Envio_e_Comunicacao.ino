@@ -138,12 +138,14 @@ void setupNetwork() {
 
     Pub.start();
     MQTT.start();
+    ota.start();
   };
   NetMgr.disconnectedEvent  = []() {
     Log.println("NetMgr.disconnectedEvent");
 
     Pub.stop();
     MQTT.stop();
+    ota.stop();
   };
   NetMgr.connectionFallbackEvent       = []() {
     Log.print("NetMgr.connectionFallbackEvent - IP: ");
@@ -151,12 +153,14 @@ void setupNetwork() {
 
     Pub.restart();
     MQTT.restart();
+    ota.restart();
   };
   NetMgr.connectionRestoreEvent = []() {
     Log.println("NetMgr.connectionRestoreEvent");
 
     Pub.restart();
     MQTT.restart();
+    ota.restart();
   };
 
   NetMgr.stopEvent = []() {
@@ -164,6 +168,7 @@ void setupNetwork() {
 
     Pub.stop();
     MQTT.stop();
+    ota.stop();
   };
 
   wifiProfile.setConfig(cfg);
@@ -285,7 +290,7 @@ void setupRouter() {
       if (ota.stopUpdate()) {
         Pub.publishEvent("ota", "update cancelado");
       } else {
-        Pub.publishEvent("ota", ota.getLastError());
+        Pub.publishEvent("ota", "não está em andamento");
       }
     });
 
@@ -299,7 +304,7 @@ void setupRouter() {
       if (ota.startUpdate(url.c_str())) {
         Pub.publishEvent("ota", "download iniciado");
       } else {
-        Pub.publishEvent("ota", ota.getLastError());
+        Pub.publishEvent("ota", "já em andamento");
       }
     });
 
@@ -319,6 +324,10 @@ void setupRouter() {
       }
     });
 
+  RTR.on("firmware_version", [](const Command& cmd) {
+      cmd.sender->println("0.1");
+    });
+
   RTR.on("led_on", [](const Command& cmd) {
       Log.println("[COMANDO] Acionando LED (simulado)");
     });
@@ -333,11 +342,11 @@ void setupRouter() {
       estView.invalidate();
     });
 
-  RTR.on("default", [](const Command& cmd) {
-      StreamString scmd;
-      scmd += cmd.name;
-      consoleInput(scmd, cmd.sender);
-    });
+  /* RTR.on("default", [](const Command& cmd) { */
+  /*     StreamString scmd; */
+  /*     scmd += cmd.name; */
+  /*     consoleInput(scmd, cmd.sender); */
+  /*   }); */
 }
 
 void setup() {
@@ -352,14 +361,6 @@ void setup() {
   setupNetwork();
   setupPublisher();
   setupRouter();
-
-  ota.begin();
-  ota.setStatusCallback([](OtaUpdater::State s, const char* detail) {
-    if (s == OtaUpdater::State::Failed) {
-      Log.print("[OTA][cb] falha: ");
-      Log.println(detail);
-    }
-  });
 
   Log.println("=== Estacao Meteorologica Iniciada ===");
   Log.println("HTTP API: httpbin.org/post (eco)");

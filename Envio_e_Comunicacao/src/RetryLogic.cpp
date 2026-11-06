@@ -1,23 +1,26 @@
 #include "RetryLogic.hpp"
 #include "Logger.hpp"
 
-RetryLogic::RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned long tryLaterTimeoutMs)
+RetryLogic::RetryLogic(const int maxRetries, const unsigned long retryTimeoutMs, const unsigned long tryLaterTimeoutMs, const char* logPrefix)
     : maxRetries(maxRetries),
       retryTimeoutMs(retryTimeoutMs),
-      tryLaterTimeoutMs(tryLaterTimeoutMs) {}
+      tryLaterTimeoutMs(tryLaterTimeoutMs),
+      logPrefix(logPrefix) {}
 
 bool RetryLogic::canRetry() {
   if (isInTryLater()) {
     //TODO: niveis de log Log.println("Aguardando tryLater expirar...");
     return false;
   }
-  
+
   if (tryLaterExpired()) {
+    Log.print(logPrefix);
     Log.println("TryLater expirado, resetando retries");
     reset();
   }
 
   if (!hasRetriesLeft()) {
+    Log.print(logPrefix);
     Log.println("Sem mais retries, entrando no tryLater");
     enterTryLater();
     return false;

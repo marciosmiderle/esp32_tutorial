@@ -1,5 +1,8 @@
 #include "CppUTest/CommandLineTestRunner.h"
 
+#include "LoggerStdioDevice.hpp"
+#include "Logger.hpp"
+
 int main(int ac, char** av)
 {
 #ifdef _WIN32
@@ -8,6 +11,10 @@ int main(int ac, char** av)
     return 1; // Cancela se a rede do Windows falhar
   }
 #endif
+
+  LoggerStdioDevice* logToSer0 = nullptr;
+  logToSer0 = new LoggerStdioDevice(Serial);
+  Log.addLogger(logToSer0);
 
   return CommandLineTestRunner::RunAllTests(ac, av);
 

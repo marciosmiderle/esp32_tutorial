@@ -14,7 +14,7 @@ NetManager& NetManager::getInstance(int maxRetries, unsigned long retryTimeoutMs
 
 NetManager::NetManager(int maxRetries, unsigned long retryTimeoutMs,
                        unsigned long tryLaterTimeoutMs)
-  : retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs),
+  : retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs, NM),
     started(false) {
   nm.onEvent(onNetworkEvent);
 }

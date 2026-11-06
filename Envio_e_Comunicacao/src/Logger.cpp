@@ -55,3 +55,21 @@ void Logger::enable() {
 void Logger::addLogger(LoggerBase* _logger) {
   loggers.push_back(_logger);
 }
+
+size_t Logger::println(const char* prefix, const char* msg) {
+  return println(prefix, msg, "");
+}
+
+size_t Logger::println(const char* prefix, const char* msg, const char* suffix) {
+  size_t ret = print(prefix);
+  ret += print(msg);
+  ret += println(suffix);
+  return ret;
+}
+
+size_t Logger::println(const char* prefix, const char* msg, const int val) {
+  size_t ret = print(prefix);
+  ret += print(msg);
+  ret += println(val);
+  return ret;
+}
