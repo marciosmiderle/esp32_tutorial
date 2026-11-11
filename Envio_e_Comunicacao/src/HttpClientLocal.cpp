@@ -107,9 +107,6 @@ void HttpClientLocal::update() {
   }
 
   if (phase == Phase::Ready) {
-    if (queue.empty())
-      return;
-
     phase = Phase::Sending;
     retry.reset();
     // retorna pra ser nice
@@ -264,6 +261,10 @@ uint16_t HttpClientLocal::getPort() const {
 
 String HttpClientLocal::getEndp() const {
   return const_cast<HTTPClientEx&>(http).getEndp();
+}
+
+void HttpClientLocal::setEndp(String endp) {
+  setHostPortEndpoint(getHost(), getPort(), endp);
 }
 
 int HttpClientLocal::getHttpCode() const {

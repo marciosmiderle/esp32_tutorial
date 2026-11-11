@@ -7,12 +7,20 @@
 #include "util.hpp"
 
 #include "CppUTest/TestHarness.h"
+#include <filesystem>
 
-static HttpRequest makeRequest(int n) {
+static HttpRequest makeRequest(int n, const char* method = "GET") {
   Message m;
   m.timestamp = (unsigned long)n;
   m.temperature = 20.0f + (float)n;
-  return HttpRequest("GET", m.toJson());
+  return HttpRequest(method, m.toJson());
+}
+
+constexpr char path_sep = std::filesystem::path::preferred_separator;
+
+static size_t file_size(std::string file_path) {
+  std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+  return file.tellg();
 }
 
 //static String bodyOf(int n) { return makeRequest(n).toJson(); }
@@ -20,12 +28,12 @@ static HttpRequest makeRequest(int n) {
 TEST_GROUP(HttpClientLocal) {
   using Phase = HttpClientLocal::Phase;
 
-  static constexpr const char* HOSTNAME = "localhost";
-  static const           int   PORT     = HttpTestServer::PORT;
-  static constexpr const char* URI      = "/api/data";
-  // static constexpr const char* HOSTNAME = "httpbin.org";
-  // static const           int   PORT     = 80;
-  // static constexpr const char* URI      = "/post";
+  static constexpr const char* HOSTNAME  = "localhost";
+  static const           int   PORT      = HttpTestServer::PORT;
+  static constexpr const char* URI       = "/";
+  static constexpr const char* file_name = "firmware.bin.md5";
+  const std::string            file_path = std::string(FIXTURES_DIR)       + path_sep + file_name;
+  const std::string            endpoint  = std::string("/tests/fixtures/") + file_name;
 
   // millis() só anda com millis_forward().
   // Começamos em 10000 ("uptime") porque o RetryLogic zera lastAttemptMs para 0:
@@ -41,23 +49,16 @@ TEST_GROUP(HttpClientLocal) {
   void setup() {
     millis_set(START_MS);  // sem isso um teste herda o tempo do anterior
     recreate(maxQueue, maxRetries);
-
-    server.response = HttpTestServer::okResponse();
-    server.closeWithoutResponse = false;
-    server.delayResponse = false;
-    server.request.clear();
     server.start();
   }
 
   void teardown() {
     delete client;
     client = nullptr;
-    server.shutdownNow();
+    server.stop();
     millis_set(START_MS);
   }
 
-  // Padrão: retryTimeout = 0 (backoff desligado) e tryLater longo.
-  // Os testes de backoff passam timeouts reais e avançam o tempo com millis_forward().
   void recreate(size_t _maxQueue, int _maxRetries = 3,
                 unsigned long retryTimeoutMs = 2000, unsigned long tryLaterMs = 30000) {
     delete client;
@@ -70,21 +71,19 @@ TEST_GROUP(HttpClientLocal) {
   }
 
   void runUntilQueueDrained() {
-    while_timed(5000, [this]() {
-      client->update();
-      if (client->pending() == 0)
-        return false;
-      return true;
-    });
-  }
-
-  // Como runUntilQueueDrained, mas tolera mensagens que ficam na fila (5xx/backoff/tryLater).
-  void runUntilFakeIdle(int maxIter = 200) {
-    for (int i = 0; i < maxIter; i++) {
-      client->update();
-      if (client->getPhase() == Phase::Idle) return;
-    }
-    FAIL("transporte não voltou a Idle dentro do limite de iterações");
+    int p = client->pending();
+    while_timed(5000,
+                [this]() {
+                  client->update();
+                  if (client->pending() == 0)
+                    return false;
+                  return true;
+                },
+                [this, &p]() {
+                  bool ret = client->pending() < p;
+                  p = client->pending();
+                  return ret;
+                });
   }
 
   void update_timed_until_client_phase_is(
@@ -279,11 +278,9 @@ TEST(HttpClientLocal, release_from_queued_after_receiving) {
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   CHECK_TRUE(2 == client->pending());
 
-  server.response = HttpTestServer::okResponse();
   client->update(); // *ready -> sending
   client->update(); // *sending -> receiving
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
-  CHECK_TRUE(2 == client->getContentLength());
   CHECK_TRUE(HTTP_CODE_OK == client->getHttpCode());
 
   CHECK_TRUE(2 == client->pending());
@@ -298,40 +295,54 @@ TEST(HttpClientLocal, no_release_from_queued_on_server_busy) {
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   CHECK_TRUE(1 == client->pending());
 
-  server.response = HttpTestServer::nokResponse503();
   client->update(); // *ready -> sending
+  client->getNetworkClient().injectResponse("data from previous request to be consumed");
+  const int closeConnectionIntheMiddleOfContentLength = 20;
+  client->getNetworkClient().injectResponse("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n", closeConnectionIntheMiddleOfContentLength);
   client->update(); // *sending -> receiving
 
-  CHECK_TRUE(HTTPC_ERROR_CONNECTION_LOST == client->getRequestReturn());
-  CHECK_TRUE(503 == client->getHttpCode());
+  LONGS_EQUAL(HTTPC_ERROR_CONNECTION_LOST, client->getRequestReturn());
+  LONGS_EQUAL(HTTP_CODE_SERVICE_UNAVAILABLE, client->getHttpCode());
   CHECK_TRUE(0 == client->getContentLength());
 
+  LONGS_EQUAL(1, client->pending());
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
   client->update(); // *receiving -> idle
   CHECK_EQUAL(Phase::Idle, client->getPhase());
 
-  CHECK_TRUE(1 == client->pending());
+  LONGS_EQUAL(1, client->pending());
 }
 
 TEST(HttpClientLocal, rejeicao4xx_descarta_e_continua_a_fila) {
   client->start();
-  client->send(makeRequest(5678));
-  client->send(makeRequest(8765));
-  server.response = HttpTestServer::nokResponse400();
-  update_timed_until_client_phase_is(Phase::Ready, 5000);
+  client->send(HttpRequest("GET"));
+  client->send(HttpRequest("GET"));
+  client->send(HttpRequest("GET"));
+  server.response400 = true;
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase()); // before consume 400 code
-  CHECK_TRUE(2 == client->pending());
-  update_timed_until_client_phase_is(Phase::Ready, 5000);
+  LONGS_EQUAL(3, client->pending());
+  CHECK_TRUE(client->isConnected());
+  update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase()); // after consume 400 code
-  CHECK_TRUE(1 == client->pending());
+  LONGS_EQUAL(2, client->pending());
+  CHECK_TRUE(client->isConnected());
 
-  server.response = HttpTestServer::okResponse();
+  server.response400 = false;
   update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
-  CHECK_TRUE(0 == client->pending());
+  LONGS_EQUAL(1, client->pending());
+  CHECK_TRUE(client->isConnected());
+
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  LONGS_EQUAL(0, client->pending());
+  CHECK_TRUE(client->isConnected());
 }
 
 TEST(HttpClientLocal, connection_phases) {
+  client->setEndp(endpoint.c_str());
+
   CHECK_EQUAL(Phase::Idle, client->getPhase());
   client->update();
   CHECK_EQUAL(Phase::Idle, client->getPhase());
@@ -347,13 +358,13 @@ TEST(HttpClientLocal, connection_phases) {
   update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
 
-  CHECK_EQUAL(Phase::Ready, client->getPhase());
-  server.response = HttpTestServer::okResponse();
   client->update();
   CHECK_EQUAL(Phase::Sending, client->getPhase());
   client->update();
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
-  CHECK_TRUE(2 == client->getContentLength());
+
+  LONGS_EQUAL(file_size(file_path), client->getContentLength());
+
   client->update();
   CHECK_EQUAL(Phase::Ready, client->getPhase());
 
@@ -365,7 +376,7 @@ TEST(HttpClientLocal, connection_phases) {
 
 TEST(HttpClientLocal, PostRecebidoEStatus200Lido) {
   client->start();
-  client->send(makeRequest(4321));
+  client->send(makeRequest(4321, "POST"));
   String body;
   client->onData = [this, &body](bool& isComplete) {
     body += client->getContent();
@@ -374,19 +385,16 @@ TEST(HttpClientLocal, PostRecebidoEStatus200Lido) {
 
   update_timed_until_client_phase_is(Phase::Ready);
   CHECK_EQUAL(Phase::Ready, client->getPhase());
-  server.response = HttpTestServer::okResponse();
-  // client->update(); // *ready -> sending
-  // client->update(); // *sending -> receiving
   update_timed_until_client_phase_is(Phase::Receiving);
   CHECK_EQUAL(Phase::Receiving, client->getPhase());
-  CHECK_TRUE(2 == client->getContentLength());
-  client->update(); // ready
+  client->update();
+  LONGS_EQUAL(HttpTestServer::okResponse().size(), client->getContentLength());
   CHECK_EQUAL(Phase::Ready, client->getPhase());
   CHECK_TRUE(HTTP_CODE_OK == client->getHttpCode());
 }
 
 TEST(HttpClientLocal, test_download) {
-  client->setHostPortEndpointFromUri("http://localhost:8080/debug/Envio_e_Comunicacao.ino.bin.md5");
+  client->setHostPortEndpointFromUri("http://localhost:8080/tests/fixtures/firmware.bin.md5");
 
   client->start();
   client->send(HttpRequest("GET"));
@@ -413,7 +421,7 @@ TEST(HttpClientLocal, test_download) {
 
 TEST(HttpClientLocal, test_chunked_download) {
   String uri;
-  uri = "http://localhost:8080/debug/Envio_e_Comunicacao.ino.merged.bin";
+  uri = "http://localhost:8080/tests/fixtures/firmware.merged.bin";
   client->setHostPortEndpointFromUri(uri);
 
   client->start();
@@ -438,12 +446,17 @@ TEST(HttpClientLocal, test_chunked_download) {
       downloaded += n;
       count_previo = count;
       count++;
+      if (count % 50 == 0) {
+        Log.printf("%s%7.0u / %7.0u\n", "[HttpClientLocalTest] ",
+                   (unsigned)downloaded, (unsigned)client->getContentLength());
+      }
 
     } else {
-      Log.print("[HttpClientLocalTest] downloaded / total    ");
+      Log.print("[HttpClientLocalTest] ");
       Log.print(downloaded);
       Log.print(" / ");
-      Log.println(client->getContentLength());
+      Log.print(client->getContentLength());
+      Log.println(" -> COMPLETE");
       isComplete = true;
     }
 

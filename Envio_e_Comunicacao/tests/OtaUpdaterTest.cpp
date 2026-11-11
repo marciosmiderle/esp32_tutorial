@@ -1,7 +1,7 @@
 #include "mocks/millis.h"
 
 #include "OtaUpdater.hpp"
-//#include "HttpTestServer.hpp"
+#include "HttpTestServer.hpp"
 #include "util.hpp"
 
 #include "CppUTest/TestHarness.h"
@@ -13,28 +13,29 @@ TEST_GROUP(OtaUpdater) {
   static constexpr const char* HOSTNAME = "localhost";
   //static const           int   PORT     = HttpTestServer::PORT;
   static const           int   PORT     = 8080;
-  static constexpr const char* URI      = "/api/data";
+  static constexpr const char* URI      = "/";
   // static constexpr const char* HOSTNAME = "httpbin.org";
   // static const           int   PORT     = 80;
   // static constexpr const char* URI      = "/post";
-  static constexpr const char* firmwareUrl = "http://localhost:8080/debug/Envio_e_Comunicacao.ino.bin";
+  static constexpr const char* firmwareUrl = "http://localhost:8080/tests/fixtures/firmware.bin";
 
   // millis() só anda com millis_forward().
   // Começamos em 10000 ("uptime") porque o RetryLogic zera lastAttemptMs para 0:
   static const unsigned long START_MS = 10000;
 
   OtaUpdater* ota = nullptr;
-  //HttpTestServer server;
+  HttpTestServer server;
 
   void setup() {
     millis_set(START_MS);  // sem isso um teste herda o tempo do anterior
     recreate();
+    server.start();
   }
 
   void teardown() {
     delete ota;
     ota = nullptr;
-    //server.shutdownNow();
+    server.stop();
     // millis_set(START_MS);
   }
 
@@ -269,7 +270,7 @@ TEST(OtaUpdater, happy_path_states) {
 // }
 
 // TEST(OtaUpdater, test_download) {
-//   ota->setHostPortEndpointFromUri("http://localhost:8080/Envio_e_Comunicacao.ino.bin.md5");
+//   ota->setHostPortEndpointFromUri("http://localhost:8080/tests/fixtures/firmware.bin.md5");
 
 //   ota->start();
 //   ota->send(HttpRequest("GET"));
@@ -295,7 +296,7 @@ TEST(OtaUpdater, happy_path_states) {
 // }
 
 // TEST(OtaUpdater, test_chunked_download) {
-//   ota->setHostPortEndpointFromUri("http://localhost:8080/Envio_e_Comunicacao.ino.merged.bin");
+//   ota->setHostPortEndpointFromUri("http://localhost:8080/tests/fixtures/firmware.merged.bin");
 
 //   ota->start();
 //   ota->send(HttpRequest("GET"));

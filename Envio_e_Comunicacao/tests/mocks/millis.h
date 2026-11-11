@@ -8,3 +8,4 @@ void millis_backward(unsigned long offset_ms);
 unsigned long custom_millis();
 
 #define millis() custom_millis()
+#define delay(ms) millis_forward(ms)

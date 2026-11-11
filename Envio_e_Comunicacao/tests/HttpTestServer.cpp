@@ -1,80 +1,108 @@
 #include "HttpTestServer.hpp"
-#include "os_posix_compat.hpp"
+#include <thread>
+#include <chrono>
+#include <iostream>
 
 HttpTestServer::~HttpTestServer() {
-  if (!stop) {
-    shutdownNow();
+  if (!stopped) {
+    stop();
   }
 }
 
 void HttpTestServer::start() {
+  stopped = false;
+
+  using namespace httplib;
+
+  server.set_logger([](const Request& req, const Response& res) {
+    std::cout << "[HttpTestServer] " << req.method << " " << req.path
+              << " -> Status: " << res.status << std::endl;
+  });
+
+  auto handler = [this](const Request& req, Response& res) {
+    this->request = req.body.empty() ? req.path : req.body;
+
+    if (this->delayResponse) {
+      std::cout << "[HttpTestServer] [MODO: delayResponse] Segurando conexão..." << std::endl;
+      while (!this->stopped) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+      return;
+    }
+
+    if (this->closeWithoutResponse) {
+      std::cout << "[HttpTestServer] [MODO: closeWithoutResponse] Derrubando conexão." << std::endl;
+      res.status = -1;
+      return;
+    }
+
+    if (this->response503) {
+      res.status = 503;
+      res.set_content(nokResponse503(), "text/html");
+      return;
+    }
+
+    if (this->response400) {
+      res.status = 400;
+      res.set_header("Connection", "close");
+      res.set_content(nokResponse400(), "text/html");
+      return;
+    }
+
+    if (!this->response.empty()) {
+      res.status = 200;
+      res.set_content(this->response, "text/html");
+      return;
+    }
+
+    if (req.path == "/" || req.path == "/status") {
+      res.status = 200;
+      res.set_content(okResponse(), "text/html");
+      return;
+    }
+
+    res.status = 404;
+    res.set_content("<html><body><h1>404 Not Found</h1></body></html>", "text/html");
+  };
+
+  server.Get(R"(.*)", handler);
+  server.Post(R"(.*)", handler);
+
+  if (!server.set_mount_point("/", ROOT_DIR)) {
+    std::clog << "[HttpTestServer] AVISO: Pasta (" << ROOT_DIR << ") indisponível." << std::endl;
+  }
+  std::clog << "[HttpTestServer] Serving dir (" << WWW_DIR << ")" << std::endl;
+
   th = std::thread([this] { serve(); });
+  server.wait_until_ready();
 }
 
-void HttpTestServer::join() {
-  if (th.joinable()) th.join();
-}
-
-void HttpTestServer::shutdownNow() {
-  stop = true;
-  wakeUp();
+void HttpTestServer::stop() {
+  stopped = true;
+  server.stop();
   join();
 }
 
-void HttpTestServer::wakeUp() {
-  // acorda o ppoll do servidor (está sem timeout) com uma conexão descartável
-  int c = ::socket(AF_INET, SOCK_STREAM, 0);
-  struct sockaddr_in sa = {};
-  sa.sin_family = AF_INET;
-  sa.sin_port = htons(PORT);
-  sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  if (c >= 0) { ::connect(c, (struct sockaddr*)&sa, sizeof(sa)); close(c); }
-}
-
-void HttpTestServer::serve() {
-  int ls = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (ls < 0) return;
-  int on = 1;
-  setsockopt(ls, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&on), sizeof(on));
-  struct sockaddr_in sa = {};
-  sa.sin_family = AF_INET;
-  sa.sin_port = htons(PORT);
-  sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  if (::bind(ls, (struct sockaddr*)&sa, sizeof(sa)) != 0) { close(ls); return; }
-  listen(ls, 4);
-
-  while (!stop.load()) {
-    struct pollfd p = {static_cast<decltype(pollfd::fd)>(ls), POLLIN, 0};
-    int r = ppoll(&p, 1, nullptr, nullptr);
-    if (r <= 0) continue;
-    int c = accept(ls, nullptr, nullptr);
-    if (c < 0) continue;
-
-    char buf[512];
-    ssize_t n = recv(c, buf, sizeof(buf) - 1, 0);
-    request = (n > 0) ? std::string(buf, (size_t)n) : std::string();
-
-    if (!closeWithoutResponse && !delayResponse) {
-      size_t sent = 0;
-      while (sent < response.size()) {
-        ssize_t w = send(c, response.data() + sent, response.size() - sent, MSG_NOSIGNAL);
-        if (w <= 0) break;
-        sent += (size_t)w;
-      }
-    }
-    close(c);
+void HttpTestServer::join() {
+  if (th.joinable()) {
+    th.join();
   }
-  close(ls);
 }
 
 std::string HttpTestServer::okResponse() {
-  return "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}";
+  return "<html><body><h1>200 OK</h1></body></html>";
 }
 
 std::string HttpTestServer::nokResponse503() {
-  return "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close";
+  return "<html><body><h1>503 Service Unavailable</h1></body></html>";
 }
 
 std::string HttpTestServer::nokResponse400() {
-  return "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close";
+  return "<html><body><h1>400 Bad Request</h1></body></html>";
+}
+
+void HttpTestServer::serve() {
+  if (!server.listen("127.0.0.1", PORT)) {
+    std::cerr << "[HttpTestServer] ERRO CRÍTICO: Falha ao alocar a porta " << PORT << std::endl;
+  }
 }

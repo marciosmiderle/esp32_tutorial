@@ -8,7 +8,7 @@ function(add_arduino_firmware_target TYPE OUTPUT_PREFIX EXTRA_FLAGS IS_ALL_TARGE
   set(FIRMWARE_MD5  "${FIRMWARE_BIN}.md5")
   add_custom_command(
     OUTPUT "${FIRMWARE_BIN}" "${FIRMWARE_MAP}" "${FIRMWARE_ELF}" "${FIRMWARE_MBIN}" "${FIRMWARE_PART}"
-    COMMAND arduino-cli compile
+    COMMAND "${ARDUINO_CLI_EXECUTABLE}" compile
     --build-path "${CMAKE_BINARY_DIR}/${TYPE}"
     --warnings all
     --verbose
@@ -26,4 +26,21 @@ function(add_arduino_firmware_target TYPE OUTPUT_PREFIX EXTRA_FLAGS IS_ALL_TARGE
   set_property(TARGET ${TYPE} APPEND PROPERTY
     ADDITIONAL_CLEAN_FILES "${FIRMWARE_MD5}"
   )
+endfunction()
+
+function(find_arduino_cli_executable)
+  find_program(ARDUINO_CLI_EXECUTABLE
+    NAMES arduino-cli arduino-cli.exe
+    HINTS
+    "$ENV{LOCALAPPDATA}/Programs/Arduino CLI"
+    "C:/Program Files/Arduino CLI"
+    "/usr/local/bin"
+    "/opt/homebrew/bin"
+    "$ENV{HOME}/.local/bin"
+  )
+  if(ARDUINO_CLI_EXECUTABLE)
+    message(STATUS "Found arduino-cli: ${ARDUINO_CLI_EXECUTABLE}")
+  else()
+    message(WARNING "arduino-cli not found! Please install it or add it to your PATH.")
+  endif()
 endfunction()

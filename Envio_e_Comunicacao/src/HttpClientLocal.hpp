@@ -38,6 +38,7 @@ public:
   String getContent() const;
   String getHost() const;
   uint16_t getPort() const;
+  void setEndp(String endp);
   String getEndp() const;
   int getHttpCode() const;
   int getRequestReturn() const;
