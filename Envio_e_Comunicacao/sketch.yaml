@@ -7,6 +7,9 @@ profiles:
       - "DHT sensor library for ESPx (1.19.0)"
       - "ArduinoJson (7.4.3)"
       - "PubSubClient (2.8.0)"
+      - "NetworkManager (0.3.0)"
+      - dependency: "NetworkProfile (0.9.0)"
+      - dependency: "Host (0.7.0)"
 
   release:
     fqbn: esp32:esp32:esp32doit-devkit-v1
@@ -14,3 +17,6 @@ profiles:
       - "DHT sensor library for ESPx (1.19.0)"
       - "ArduinoJson (7.4.3)"
       - "PubSubClient (2.8.0)"
+      - "NetworkManager (0.3.0)"
+      - dependency: "NetworkProfile (0.9.0)"
+      - dependency: "Host (0.7.0)"

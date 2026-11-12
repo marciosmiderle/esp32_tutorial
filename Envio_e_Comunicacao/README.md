@@ -1,8 +1,48 @@
+# Como rodar
+
+Para compilar é preciso instalar:
+- arduino-cli (ou o Arduino Studio) e adicionar os caminhos ao `PATH`
+- cpputest
+
+ 
+ cmake --build build --target debug run_tests
+
+```bash
+$ git clone <repo>
+$ cd <repo>/Envio_e_Comunicacao
+$ cmake -S . -B build
+$ cmake --build build --target debug
+
+$ tree -L 1 -P 'Envio*' build/debug
+build/debug
+├── core
+├── Envio_e_Comunicacao.ino.bin
+├── Envio_e_Comunicacao.ino.bin.md5
+├── Envio_e_Comunicacao.ino.bootloader.bin
+├── Envio_e_Comunicacao.ino.elf
+├── Envio_e_Comunicacao.ino.map
+├── Envio_e_Comunicacao.ino.merged.bin
+├── Envio_e_Comunicacao.ino.partitions.bin
+
+```
+
+Rode o arquivo *.merged.bin usando o upload de firmware no emulador ou hardware.
+Use os comandos MQTT descritos em <Comandos MQTT> e siga os exemplo. É preciso um cliente mqtt como o `mosquitto_pub`.
+
+Alternativamente, um arquivo para rodar no simulador wokwi via comando wokwi-cli está na raiz do projeto. É preciso gerar um token de API conforme a documentação. Antes é preciso compilar usando o aquivo compile.bat, que usa o arduino-cli.
+
+Para rodar os testes:
+
+```bash
+$ cmake --build build --target run_tests
+```
+
 # Envio por HTTP e Comunicação MQTT
 
 ## Arquitetura
 
-O sistema foi estendido para enviar dados de telemetria via HTTP POST e MQTT, utilizando uma classe `Message` única para evitar duplicação de código. Ambos os protocolos utilizam a mesma lógica de retry (`RetryLogic`) para lidar com falhas de comunicação.
+O sistema envia dados de telemetria via HTTP POST e MQTT, utilizando a classe `Message`. Ambos os protocolos utilizam a mesma lógica de retry (`RetryLogic`) para lidar com falhas de comunicação.
+No `loop()` são processados os inputs (pooling de eventos e entradas), são atualizados os modelos (é propagado o clock). Também é feita a saída de mensagens para o usuário (via console ou outra) e enviadas as mensagens de telemetria.
 
 ## Classe Message
 
@@ -32,13 +72,6 @@ Quando a API está indisponível:
 2. Se todas falharem, entra em modo "tryLater" por 30s
 3. Após 30s, reseta os counters e tenta novamente
 4. A aquisição de dados continua normalmente mesmo durante falhas HTTP
-
-### Registro de Resultados
-Todas as requisições são logadas no Serial com:
-- Código de resposta HTTP
-- Payload enviado
-- Resposta recebida
-- Status de sucesso/falha
 
 ## Comunicação MQTT
 
@@ -96,8 +129,7 @@ mosquitto_pub -h broker.hivemq.com -t "<ClientID>/estacao/comandos/entrada" -m "
 
 ### Recuperação de Conexão
 - Tentativa de reconexão automática no `update()` do MqttClient
-- Mesma estratégia de retry do HTTP (5 retries, 2s timeout, 30s tryLater)
-- Mantém `client.loop()` chamado para processar mensagens recebidas
+- Mesma estratégia de retry do HTTP
 
 ## Resiliência do Sistema
 
@@ -106,15 +138,9 @@ O sistema continua operando nas seguintes situações:
 | Falha                    | Comportamento                                          |
 |--------------------------|--------------------------------------------------------|
 | Sensor inválido          | Outros sensores continuam lendo; erro é registrado     |
-| WiFi cai                 | Aquisição local continua; HTTP/MQTT aguardam reconexão |
+| Rede cai                 | Aquisição local continua; HTTP/MQTT aguardam reconexão |
 | API HTTP indisponível    | Retry automático; MQTT continua funcionando            |
 | Broker MQTT indisponível | Retry automático; HTTP continua funcionando            |
-
-## Frequência de Envio
-
-- **Intervalo**: 10 segundos entre envios
-- **Condição**: Apenas se houver WiFi conectado
-- **Fallback**: Se desconectado, tenta reconectar antes de cada envio
 
 ## Exemplo de Payload JSON
 
@@ -146,20 +172,11 @@ O sistema continua operando nas seguintes situações:
 }
 ```
 
-## Bibliotecas Utilizadas
+# Conexão de Rede
 
-Adicionado ao `libraries.txt`:
-- `ArduinoJson`: Serialização/desserialização JSON
-- `PubSubClient`: Cliente MQTT
+A conexão de rede é independente do meio físico do link. Pode ser configurado um acesso via WiFi (mais de um ponto de acesso) e Celular.
 
-
-# Conexão WiFi
-
-- Indica os estados da conexão no console
-- Recupera a conexão após uma falha
-- Continua coletando dados quando não tem acesso à rede
-
-Pode-se ver e modificar o estado do WiFi via comandos no console:
+Pode-se ver e modificar o estado da rede via comandos no console:
 - ws inicia a conexão
 - wf termina a conexão
 
@@ -169,8 +186,6 @@ Os pinos do ntc foram alterados por conflito com o WiFi.
 |-----------|------|-----------|
 | ntc       | 14   | 34        |
 | botão ntc | 4    | 27        |
-
-Os botões no circuito não mais ligam as amostragens, apenas mostram o valor atual do sensor. As amostragens agora são feitas continuamente.
 
 # Transformar as medições em informações úteis para monitoramento.
 
@@ -193,19 +208,18 @@ Para testar basta mudar os valores dos sensores no emulador e digitar i <enter> 
 
 # Tarefa
 
-Ao apertar o botão é iniciado um processo de leitura do sensor de temperatura com amostragem.
-Após o término do processo um conjunto de valores crus são filtrados e é calculado o valor final considerando o valor anterior. É mostrado o valor final no monitor junto a uma estimativa linear da tensão.
+As amostragens são feitas continuamente. Após o término de um ciclo, um conjunto de valores crus são filtrados e é calculado o valor final considerando o valor anterior. É mostrado o valor final no monitor junto a uma estimativa linear da tensão.
 O valor da temperatura é calculado conforme a documentação no sensor. Uma correção foi aplicada à formula já que a resolução das leituras analógicas deste ESP32 é de 12 bits, o exemplo é dado é de 10 bits.
 Para testar diversas temperaturas é preciso alterá-la no menu do sensor durante a execução no emulador.
 
 Internamente:
 1. Lê 32 amostras do ADC
-2. Ordena elas
+2. As ordena
 3. Joga fora os 25% menores e 25% maiores  - remove outliers
 4. Faz a média do que sobrou               - valor mais estável daquele instante
 5. Passa esse valor pelo filtro EMA        - suaviza ao longo do tempo
 
-O filtro EMA (Exponential Moving Average): 
+O filtro EMA: Exponential Moving Average.
 
 # Escolha dos pinos
 
@@ -237,13 +251,11 @@ Temos comandos via serial para simular os cliques nos botões do simulador.
 | df      | dht : injeta falha |
 | p       | pir                |
 
+Na função `consoleInput()` outros comandos de injeção de falha podem ser consultados.
+
 # Tratamento de falhas demonstrado.
 
 Feita apenas para o DHT. Temos um timeout e retry para uma amostragem isolada, e outro timeout para o conjunto de amostras em falha. O comando df no console injeta este segundo tipo de falha. Um comando d neste estado faz o console mostrar que o DHT está em falha. Após o readSampleInFailWaitTimeForRetry o comando d volta a responder normalmente.
-
-# Como rodar
-
-Um arquivo para rodar no simulador wokwi via comando wokwi-cli está na raiz do projeto. É preciso gerar um token de API conforme a documentação. Antes é preciso compilar usando o aquivo compile.bat, que usa o arduino-cli.
 
 # OTA Update (feature/ota-update)
 
@@ -251,7 +263,7 @@ Atualização de firmware via MQTT + HTTP, com verificação de integridade.
 
 ## Comandos MQTT
 
-Publique no tópico `<ClientID>/estacao/comandos/entrada`:
+Publique no tópico `<ClientID>/estacao/comandos/entrada` os comandos descritos anteriormente.
 
 O comando `firmware_update <url_do_bin>` baixa o `.bin` e o hash (`.md5` ou `.sha256` de mesmo nome), grava na partição OTA e reinicia. Depois, manualmente, o comando `firmware_mark_ok` confirma o firmware atual como válido, e o `firmware_mark_invalid_reboot` marca o update como inválido fazendo o rollback e reinicia.
 
@@ -259,7 +271,7 @@ O comando `firmware_update <url_do_bin>` baixa o `.bin` e o hash (`.md5` ou `.sh
 Exemplo:
 
 ```bash
-# 1) Hospede firmware.bin e firmware.md5 (ou .sha256) no mesmo path base
+# 1) Hospede num webserver os arquivos firmware.bin e firmware.md5 no mesmo path base
 # 2) Dispare o update
 mosquitto_pub -h broker.hivemq.com \
   -t "<ClientID>/estacao/comandos/entrada" \

@@ -1,0 +1,473 @@
+#include "mocks/millis.h"
+
+#include "HttpClientLocal.hpp"
+#include "Message.hpp"
+#include "HttpTestServer.hpp"
+#include "Logger.hpp"
+#include "util.hpp"
+
+#include "CppUTest/TestHarness.h"
+#include <filesystem>
+
+static HttpRequest makeRequest(int n, const char* method = "GET") {
+  Message m;
+  m.timestamp = (unsigned long)n;
+  m.temperature = 20.0f + (float)n;
+  return HttpRequest(method, m.toJson());
+}
+
+constexpr char path_sep = std::filesystem::path::preferred_separator;
+
+static size_t file_size(std::string file_path) {
+  std::ifstream file(file_path, std::ios::binary | std::ios::ate);
+  return file.tellg();
+}
+
+//static String bodyOf(int n) { return makeRequest(n).toJson(); }
+
+TEST_GROUP(HttpClientLocal) {
+  using Phase = HttpClientLocal::Phase;
+
+  static constexpr const char* HOSTNAME  = "localhost";
+  static const           int   PORT      = HttpTestServer::PORT;
+  static constexpr const char* URI       = "/";
+  static constexpr const char* file_name = "firmware.bin.md5";
+  const std::string            file_path = std::string(FIXTURES_DIR)       + path_sep + file_name;
+  const std::string            endpoint  = std::string("/tests/fixtures/") + file_name;
+
+  // millis() só anda com millis_forward().
+  // Começamos em 10000 ("uptime") porque o RetryLogic zera lastAttemptMs para 0:
+  static const unsigned long START_MS = 10000;
+  static const size_t maxQueue = 3;
+  static const int maxRetries = 3;
+
+
+  NetworkClient* nc = nullptr;
+  HttpClientLocal* client = nullptr;
+  HttpTestServer server;
+
+  void setup() {
+    millis_set(START_MS);  // sem isso um teste herda o tempo do anterior
+    recreate(maxQueue, maxRetries);
+    server.start();
+  }
+
+  void teardown() {
+    delete client;
+    client = nullptr;
+    server.stop();
+    millis_set(START_MS);
+  }
+
+  void recreate(size_t _maxQueue, int _maxRetries = 3,
+                unsigned long retryTimeoutMs = 2000, unsigned long tryLaterMs = 30000) {
+    delete client;
+    client = new HttpClientLocal(HOSTNAME, PORT, URI, _maxQueue, _maxRetries, retryTimeoutMs, tryLaterMs);
+    nc = &client->getNetworkClient();
+  }
+
+  void updateN(int n) {
+    for (int i = 0; i < n; i++) client->update();
+  }
+
+  void runUntilQueueDrained() {
+    int p = client->pending();
+    while_timed(5000,
+                [this]() {
+                  client->update();
+                  if (client->pending() == 0)
+                    return false;
+                  return true;
+                },
+                [this, &p]() {
+                  bool ret = client->pending() < p;
+                  p = client->pending();
+                  return ret;
+                });
+  }
+
+  void update_timed_until_client_phase_is(
+      Phase ph,
+      unsigned long timeout_ms = 1000,
+      unsigned long forward_millis_by_ms = 100,
+      std::function<bool()> isProgressing = []() { return false; }) {
+
+    while_timed(timeout_ms, [this, &ph, &forward_millis_by_ms]() {
+      client->update();
+      millis_forward(forward_millis_by_ms);
+      if (client->getPhase() == ph) {
+        return false;
+      }
+      return true;
+    }, isProgressing);
+  }
+
+  void update_timed_until_client_phase_is(Phase ph, std::function<bool()> isProgressing) {
+    update_timed_until_client_phase_is(ph, 1000, 100, isProgressing);
+  }
+
+  SimpleString StringFrom(Phase ph) {
+    switch(ph) {
+    case Phase::Idle:       return "Phase::Idle";
+    case Phase::Connecting: return "Phase::Connecting";
+    case Phase::Ready:      return "Phase::Ready";
+    case Phase::Sending:    return "Phase::Sending";
+    case Phase::Receiving:  return "Phase::Receiving";
+    case Phase::Done:       return "Phase::Done";
+    default:
+    case Phase::Failed:     return "Phase::Failed";
+    };
+  }
+};
+
+// ----------------------------------------------------------------
+
+TEST(HttpClientLocal, send_apenas_enfileira) {
+  client->start();
+  CHECK_TRUE(client->send(makeRequest(1)));
+  CHECK_TRUE(client->send(makeRequest(2)));
+
+  CHECK_TRUE(2 == client->pending());
+}
+
+TEST(HttpClientLocal, sem_start_update_nao_faz_nada) {
+  client->send(makeRequest(1));
+  updateN(5);
+
+  CHECK_TRUE(1 == client->pending());
+}
+
+TEST(HttpClientLocal, fila_cheia_descarta_a_mais_antiga) {
+  for (int i = 0; i < maxQueue + 1; i++)
+    client->send(makeRequest(i));
+
+  CHECK_TRUE(maxQueue == client->pending());
+  CHECK_TRUE(1 == client->dropped());
+
+  client->start();
+  runUntilQueueDrained();
+
+  CHECK_TRUE(0 == client->pending());
+}
+
+TEST(HttpClientLocal, max_queue_zero_send_retorna_false) {
+  recreate(0, 3);
+  CHECK_FALSE(client->send(makeRequest(1)));
+  LONGS_EQUAL(0, client->pending());
+}
+
+// ------------------------------------------------------------ falhas / retry
+
+// TEST(HttpClientLocal, FalhasDeRedeEsgotamRetries_EntraEmTryLater) {
+//   fake.pushFail("conexao recusada");
+//   fake.pushFail("conexao recusada");
+//   fake.pushFail("conexao recusada");
+//   client->start();
+//   client->send(makeRequest(1));
+
+//   updateN(20);
+
+//   LONGS_EQUAL(3, fake.beginCount);   // maxRetries = 3
+//   LONGS_EQUAL(1, client->pending()); // mensagem preservada
+//   CHECK_FALSE(client->isConnected());
+//   STRCMP_EQUAL("conexao recusada", client->getLastResponse());
+
+//   updateN(50);  // em tryLater: nenhuma tentativa nova
+//   LONGS_EQUAL(3, fake.beginCount);
+// }
+
+// TEST(HttpClientLocal, BeginFalhandoSincrono_RegistraErroETentaDeNovo) {
+//   fake.pushBeginFailure("DNS falhou");
+//   client->start();
+//   client->send(makeRequest(1));
+
+//   client->update();
+//   LONGS_EQUAL(1, fake.beginCount);
+//   CHECK_FALSE(client->isConnected());
+//   STRCMP_EQUAL("DNS falhou", client->getLastResponse());
+//   LONGS_EQUAL(1, client->pending());
+
+//   runUntilQueueDrained();
+//   LONGS_EQUAL(2, fake.beginCount);
+//   LONGS_EQUAL(0, client->pending());
+//   CHECK_TRUE(client->isConnected());
+// }
+
+// // ------------------------------------------------- backoff / tryLater (tempo)
+
+// TEST(HttpClientLocal, Backoff_5xxEsperaORetryTimeoutAntesDeReenviar) {
+//   recreate(3, 3, 2000, 30000);
+//   fake.pushDone(503);
+//   client->start();
+//   client->send(makeRequest(1));
+
+//   updateN(5);  // 1a tentativa + resposta 503
+//   LONGS_EQUAL(1, fake.beginCount);
+//   LONGS_EQUAL(1, client->pending());
+
+//   millis_forward(1999);
+//   updateN(5);
+//   LONGS_EQUAL(1, fake.beginCount);  // ainda dentro do backoff
+
+//   millis_forward(1);  // exatamente 2000 ms desde a tentativa
+//   runUntilQueueDrained();
+//   LONGS_EQUAL(2, fake.beginCount);
+//   LONGS_EQUAL(0, client->pending());
+// }
+
+// TEST(HttpClientLocal, TryLaterExpira_ERetomaOEnvio) {
+//   recreate(3, 3, 1000, 30000);  // 3 tentativas, backoff 1 s, tryLater 30 s
+//   fake.pushFail("sem rede");
+//   fake.pushFail("sem rede");
+//   fake.pushFail("sem rede");
+//   // a 4a tentativa cai no padrão do fake: Done(200)
+//   client->start();
+//   client->send(makeRequest(1));
+
+//   updateN(3);                         // t=10000: tentativa 1
+//   LONGS_EQUAL(1, fake.beginCount);
+
+//   millis_forward(999);
+//   updateN(3);                         // 999 ms < retryTimeout: nada
+//   LONGS_EQUAL(1, fake.beginCount);
+
+//   millis_forward(1);
+//   updateN(3);                         // t=11000: tentativa 2
+//   LONGS_EQUAL(2, fake.beginCount);
+
+//   millis_forward(1000);
+//   updateN(3);                         // t=12000: tentativa 3 -> esgota -> tryLater até 42000
+//   LONGS_EQUAL(3, fake.beginCount);
+//   CHECK_FALSE(client->isConnected());
+
+//   millis_forward(29999);
+//   updateN(3);                         // t=41999: ainda em tryLater
+//   LONGS_EQUAL(3, fake.beginCount);
+//   LONGS_EQUAL(1, client->pending());
+
+//   millis_forward(1);
+//   updateN(3);                         // t=42000: tryLater expira, reset, tentativa 4
+//   LONGS_EQUAL(4, fake.beginCount);
+//   LONGS_EQUAL(0, client->pending());
+//   CHECK_TRUE(client->isConnected());
+// }
+
+TEST(HttpClientLocal, stop_preserva_fila_start_retoma) {
+  client->start();
+  client->send(makeRequest(1));
+  client->send(makeRequest(2));
+  CHECK_EQUAL(Phase::Idle, client->getPhase());
+
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  client->stop();
+  CHECK_TRUE(2 == client->pending());
+  CHECK_FALSE(client->isConnected());
+
+  client->start();
+  CHECK_TRUE(2 == client->pending());
+  runUntilQueueDrained();
+  CHECK_TRUE(0 == client->pending());
+}
+
+TEST(HttpClientLocal, release_from_queued_after_receiving) {
+  client->start();
+  client->send(makeRequest(4321));
+  client->send(makeRequest(9876));
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  CHECK_TRUE(2 == client->pending());
+
+  client->update(); // *ready -> sending
+  client->update(); // *sending -> receiving
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+  CHECK_TRUE(HTTP_CODE_OK == client->getHttpCode());
+
+  CHECK_TRUE(2 == client->pending());
+  client->update(); // -> ready
+  CHECK_TRUE(1 == client->pending());
+}
+
+TEST(HttpClientLocal, no_release_from_queued_on_server_busy) {
+  client->start();
+  client->send(makeRequest(5678));
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  CHECK_TRUE(1 == client->pending());
+
+  client->update(); // *ready -> sending
+  client->getNetworkClient().injectResponse("data from previous request to be consumed");
+  const int closeConnectionIntheMiddleOfContentLength = 20;
+  client->getNetworkClient().injectResponse("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n", closeConnectionIntheMiddleOfContentLength);
+  client->update(); // *sending -> receiving
+
+  LONGS_EQUAL(HTTPC_ERROR_CONNECTION_LOST, client->getRequestReturn());
+  LONGS_EQUAL(HTTP_CODE_SERVICE_UNAVAILABLE, client->getHttpCode());
+  CHECK_TRUE(0 == client->getContentLength());
+
+  LONGS_EQUAL(1, client->pending());
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+  client->update(); // *receiving -> idle
+  CHECK_EQUAL(Phase::Idle, client->getPhase());
+
+  LONGS_EQUAL(1, client->pending());
+}
+
+TEST(HttpClientLocal, rejeicao4xx_descarta_e_continua_a_fila) {
+  client->start();
+  client->send(HttpRequest("GET"));
+  client->send(HttpRequest("GET"));
+  client->send(HttpRequest("GET"));
+  server.response400 = true;
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase()); // before consume 400 code
+  LONGS_EQUAL(3, client->pending());
+  CHECK_TRUE(client->isConnected());
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase()); // after consume 400 code
+  LONGS_EQUAL(2, client->pending());
+  CHECK_TRUE(client->isConnected());
+
+  server.response400 = false;
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  LONGS_EQUAL(1, client->pending());
+  CHECK_TRUE(client->isConnected());
+
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  LONGS_EQUAL(0, client->pending());
+  CHECK_TRUE(client->isConnected());
+}
+
+TEST(HttpClientLocal, connection_phases) {
+  client->setEndp(endpoint.c_str());
+
+  CHECK_EQUAL(Phase::Idle, client->getPhase());
+  client->update();
+  CHECK_EQUAL(Phase::Idle, client->getPhase());
+  client->start();
+  CHECK_EQUAL(Phase::Idle, client->getPhase());
+  client->send(makeRequest(1234));
+  client->update();
+  CHECK_EQUAL(Phase::Resolving, client->getPhase());
+
+  update_timed_until_client_phase_is(Phase::Connecting);
+  CHECK_EQUAL(Phase::Connecting, client->getPhase());
+
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+
+  client->update();
+  CHECK_EQUAL(Phase::Sending, client->getPhase());
+  client->update();
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+
+  LONGS_EQUAL(file_size(file_path), client->getContentLength());
+
+  client->update();
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+
+  client->stop();
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  client->update();
+  CHECK_EQUAL(Phase::Idle, client->getPhase());
+}
+
+TEST(HttpClientLocal, PostRecebidoEStatus200Lido) {
+  client->start();
+  client->send(makeRequest(4321, "POST"));
+  String body;
+  client->onData = [this, &body](bool& isComplete) {
+    body += client->getContent();
+    isComplete = true;
+  };
+
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  update_timed_until_client_phase_is(Phase::Receiving);
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+  client->update();
+  LONGS_EQUAL(HttpTestServer::okResponse().size(), client->getContentLength());
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  CHECK_TRUE(HTTP_CODE_OK == client->getHttpCode());
+}
+
+TEST(HttpClientLocal, test_download) {
+  client->setHostPortEndpointFromUri("http://localhost:8080/tests/fixtures/firmware.bin.md5");
+
+  client->start();
+  client->send(HttpRequest("GET"));
+  String body;
+  int count = 0;
+  client->onData = [this, &body, &count](bool& isComplete) {
+    body += client->getContent();
+    count++;
+    isComplete = true;
+  };
+
+  STRCMP_EQUAL("localhost", client->getHost().c_str());
+  LONGS_EQUAL(8080, client->getPort());
+
+  update_timed_until_client_phase_is(Phase::Receiving);
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+  LONGS_EQUAL(HTTP_CODE_OK, client->getHttpCode());
+
+  update_timed_until_client_phase_is(Phase::Ready);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  LONGS_EQUAL(body.length(), client->getContentLength());
+  LONGS_EQUAL(1, count);
+}
+
+TEST(HttpClientLocal, test_chunked_download) {
+  String uri;
+  uri = "http://localhost:8080/tests/fixtures/firmware.merged.bin";
+  client->setHostPortEndpointFromUri(uri);
+
+  client->start();
+  client->send(HttpRequest("GET"));
+  int count = 0;
+  int count_previo = 0;
+  int downloaded = 0;
+  static constexpr size_t kChunkSize = 4096;
+  client->onData = [this, &count, &count_previo, &downloaded](bool& isComplete) {
+
+    if (downloaded < client->getContentLength()) {
+      NetworkClient& stream = client->getNetworkClient();
+      size_t avail = stream.available();
+      if (avail == 0) {
+        return;
+      }
+      uint8_t buf[kChunkSize];
+
+      size_t n = stream.readBytes(buf, min(avail, kChunkSize));
+      if (n == 0) return;
+
+      downloaded += n;
+      count_previo = count;
+      count++;
+      if (count % 50 == 0) {
+        Log.printf("%s%7.0u / %7.0u\n", "[HttpClientLocalTest] ",
+                   (unsigned)downloaded, (unsigned)client->getContentLength());
+      }
+
+    } else {
+      Log.print("[HttpClientLocalTest] ");
+      Log.print(downloaded);
+      Log.print(" / ");
+      Log.print(client->getContentLength());
+      Log.println(" -> COMPLETE");
+      isComplete = true;
+    }
+
+  };
+  auto isProgressing = [&count, &count_previo]() { return count > count_previo; };
+
+  update_timed_until_client_phase_is(Phase::Receiving);
+  CHECK_EQUAL(Phase::Receiving, client->getPhase());
+  LONGS_EQUAL(HTTP_CODE_OK, client->getHttpCode());
+
+  update_timed_until_client_phase_is(Phase::Ready, isProgressing);
+  CHECK_EQUAL(Phase::Ready, client->getPhase());
+  LONGS_EQUAL(downloaded, client->getContentLength());
+}

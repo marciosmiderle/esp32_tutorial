@@ -1,291 +1,332 @@
 #include "OtaUpdater.hpp"
+#include "Logger.hpp"
 
 #include <Update.h>
-#include <WiFi.h>
 #include "esp_ota_ops.h"
 
-OtaUpdater::OtaUpdater(int maxRetries, unsigned long retryTimeoutMs,
-                       unsigned long tryLaterTimeoutMs)
-  : retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs) {}
+using State     = OtaUpdater::State;
+using StepState = OtaUpdater::StepState;
 
-void OtaUpdater::begin() {
+OtaUpdater::OtaUpdater(const int maxRetries,
+                       const unsigned long retryTimeoutMs,
+                       const unsigned long tryLaterTimeoutMs)
+  : retry(maxRetries, retryTimeoutMs, tryLaterTimeoutMs, OTA), started(false),
+    http("localhost", 80, "/") {}
+
+void OtaUpdater::start() {
+  if (started) return;
+
+  started = true;
+  http.start();
 }
 
-void OtaUpdater::setStatusCallback(StatusCallback cb) {
-  statusCb = std::move(cb);
+void OtaUpdater::stop() {
+  started = false;
+  http.stop();
 }
 
-bool OtaUpdater::isBusy() const {
-  return state == State::FetchingHash || state == State::Downloading;
+void OtaUpdater::restart() {
+  stop();
+  start();
+}
+
+State OtaUpdater::getState() const {
+  return state;
+}
+
+StepState OtaUpdater::getStepState() const {
+  return stepState;
+}
+
+bool OtaUpdater::getDownloadComplete() const {
+  return downloadComplete;
+}
+
+bool OtaUpdater::isUpdating() const {
+  return state != State::Idle;
 }
 
 float OtaUpdater::getProgress() const {
-  if (totalSize == 0) return 0.0f;
-  return static_cast<float>(downloaded) / static_cast<float>(totalSize);
-}
-
-void OtaUpdater::setState(State s, const char* detail) {
-  state = s;
-  if (statusCb) {
-    statusCb(s, detail ? detail : "");
-  }
-  Serial.print("[OTA] ");
-  switch (s) {
-    case State::Idle:         Serial.print("Idle"); break;
-    case State::FetchingHash: Serial.print("FetchingHash"); break;
-    case State::Downloading:  Serial.print("Downloading"); break;
-    case State::Success:      Serial.print("Success"); break;
-    case State::Failed:       Serial.print("Failed"); break;
-  }
-  if (detail && detail[0]) {
-    Serial.print(" | ");
-    Serial.print(detail);
-  }
-  Serial.println();
-}
-
-void OtaUpdater::setError(const char* msg) {
-  strncpy(lastError, msg, sizeof(lastError) - 1);
-  lastError[sizeof(lastError) - 1] = '\0';
-  setState(State::Failed, lastError);
-}
-
-void OtaUpdater::clearError() {
-  lastError[0] = '\0';
+  return downloaded == 0 ? 0.0f :
+    static_cast<float>(downloaded) / static_cast<float>(http.getContentLength());
 }
 
 bool OtaUpdater::startUpdate(const char* url) {
-  if (isBusy()) {
-    setError("OTA ja em andamento");
-    return false;
-  }
-  if (!url || strlen(url) < 8) {
-    setError("URL invalida");
-    return false;
-  }
-  if (WiFi.status() != WL_CONNECTED) {
-    setError("WiFi desconectado");
+  if (!started) return false;
+
+  if (isUpdating()) {
+    Log.println(OTA, "ja em andamento");
     return false;
   }
 
-  clearError();
   firmwareUrl = url;
-  totalSize = 0;
   downloaded = 0;
   retry.reset();
 
-  setState(State::FetchingHash, firmwareUrl.c_str());
+  state = State::FetchingHash;
+  stepState = StepState::Starting;
+  http.start();
   return true;
 }
 
 bool OtaUpdater::stopUpdate() {
-  if (isBusy()) {
+  if (isUpdating()) {
     retry.reset();
     Update.abort();
     state = State::Idle;
-    totalSize = 0;
+    stepState = StepState::Idle;
     downloaded = 0;
-    lastError[0] = '\0';
     lastProgressLogMs = 0;
+    http.stop();
 
     return true;
   }
-  setError("OTA não está em andamento");
+  Log.println(OTA, "não está em andamento");
   return false;
 }
 
 bool OtaUpdater::markOk() {
   if(esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
-    Serial.println("[OTA] firmware markOk — imagem atual confirmada");
-    setState(State::Success, "markOk");
+    Log.println(OTA, "firmware markOk - imagem atual confirmada");
   } else {
-    Serial.println("[OTA] erro em markOk");
+    Log.println(OTA, "erro em markOk");
   }
   return true;
 }
 
 bool OtaUpdater::markInvalidReboot() {
   if (esp_ota_mark_app_invalid_rollback_and_reboot() == ESP_OK) {
-    Serial.println("[OTA] firmware invalid, rollback e reboot");
-    setState(State::Success, "markInvalidReboot");
+    Log.println(OTA, "firmware invalid, rollback e reboot");
   } else {
-    Serial.println("[OTA] erro em markInvalidReboot");
+    Log.println(OTA, "erro em markInvalidReboot");
   }
   return true;
 }
 
-void OtaUpdater::abort() {
-  if (Update.isRunning()) {
-    Update.abort();
+void OtaUpdater::stepFetchHash() {
+  if (!retry.canRetry()) return;
+
+  switch (stepState) {
+
+  case StepState::Starting: {
+    String uriMd5 = CheckSum::deriveHashUrl(firmwareUrl, false);
+    http.setHostPortEndpointFromUri(uriMd5);
+    HttpRequest request("GET");
+    http.send(request);
+    downloadComplete = false;
+    http.onData = [this](bool& isComplete) { isComplete = downloadComplete; };
+    stepState = StepState::Running;
+    break;
   }
-  downloaded = 0;
-  totalSize = 0;
-  setState(State::Idle, "aborted");
-}
 
-bool OtaUpdater::stepFetchHash() {
-  if (!retry.canRetry()) return false;
-
-  String urlMd5 = CheckSum::deriveHashUrl(firmwareUrl, false);
-  String urlSha = CheckSum::deriveHashUrl(firmwareUrl, true);
-
-  Serial.print("[OTA] GET ");
-  Serial.println(urlMd5);
-  http.begin(urlMd5);
-  http.setTimeout(10000);
-  int code = http.GET();
-  String body;
-
-  if (code == 200) {
-    body = http.getString();
-  }
-  http.end();
-
-  if (code != 200) {
-    Serial.print("[OTA] GET ");
-    Serial.println(urlSha);
-    http.begin(urlSha);
-    http.setTimeout(10000);
-    code = http.GET();
-    if (code == 200) {
-      body = http.getString();
+  case StepState::Running: {
+    if (http.getPhase() != HttpClientLocal::Phase::Receiving) {
+      break;
     }
-    http.end();
+    int code = http.getHttpCode();
+    String body;
+
+    if (code != 200) {
+      Log.println(OTA, "hash HTTP ", code);
+      stepState = StepState::Failed;
+    } else if (http.getContentLength() > maxCheckSumFileSize) {
+      Log.println(OTA, "Arquivo de hash com tamanho grande demais");
+      stepState = StepState::Failed;
+    } else {
+
+      body = http.getContent();
+      if(sum.parseHash(body)) {
+        stepState = StepState::Finished;
+      } else {
+        Log.println(OTA, "Arquivo de hash invalido");
+        stepState = StepState::Failed;
+      }
+      downloadComplete = true;
+
+    }
+    break;
   }
 
-  if (code != 200) {
-    Serial.printf("[OTA] hash HTTP %d\n", code);
-    return false;
+  default:
+    break;
   }
-
-  if(!sum.parseHash(body)) {
-    setError("Arquivo de hash invalido");
-    return false;
-  }
-  sum.begin();
 
   retry.reset();
-  setState(State::Downloading, "hash ok");
-  return true;
+  return;
 }
 
-bool OtaUpdater::stepDownload() {
-  if (!retry.canRetry()) return false;
-  if (WiFi.status() != WL_CONNECTED) return false;
+void OtaUpdater::stepDownload() {
+  if (!retry.canRetry()) return;
 
-  downloaded = 0;
+  switch (stepState) {
 
-  http.begin(firmwareUrl);
-  http.setTimeout(20000);
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-
-  Serial.print("[OTA] GET ");
-  Serial.println(firmwareUrl);
-  int code = http.GET();
-  if (code != 200 && code != 206) {
-    Serial.printf("[OTA] firmware HTTP %d\n", code);
-    http.end();
-    return false;
+  case StepState::Starting: {
+    http.setHostPortEndpointFromUri(firmwareUrl);
+    HttpRequest request("GET");
+    http.send(request);
+    downloadComplete = false;
+    http.onData = [this](bool& isComplete) { isComplete = downloadComplete; };
+    stepState = StepState::Running;
+    downloaded = 0;
+    break;
   }
 
-  int contentLen = http.getSize();
-  if (contentLen <= 0) {
-    http.end();
-    setError("Content-Length ausente");
-    return false;
-  }
-  totalSize = static_cast<size_t>(contentLen);
-
-  if (!Update.begin(totalSize, U_FLASH)) {
-    http.end();
-    setError("Update.begin falhou");
-    Update.printError(Serial);
-    return false;
-  }
-
-  WiFiClient* stream = http.getStreamPtr();
-  uint8_t buf[kChunkSize];
-
-  while (http.connected() && downloaded < totalSize) {
-    size_t avail = stream->available();
-    if (avail == 0) {
-      delay(1);
-      continue;
+  case StepState::Running: {
+    if (http.getPhase() != HttpClientLocal::Phase::Receiving) {
+      break;
     }
-
-    size_t n = stream->readBytes(buf, min(avail, kChunkSize));
-    if (n == 0) break;
-
-    if (Update.write(buf, n) != n) {
-      http.end();
-      Update.abort();
-      setError("Update.write falhou");
-      Update.printError(Serial);
-      return false;
+    if (http.getContentLength() <= 0) {
+      Log.println(OTA, "Content-Length ausente");
+      stepState = StepState::Failed;
+      break;
     }
-
-    sum.add(buf, n);
-
-    downloaded += n;
-
-    if (millis() - lastProgressLogMs >= 1000) {
-      lastProgressLogMs = millis();
-      Serial.printf("[OTA] %7.0u / %7.0u (%2.0f%%)\n",
-                    (unsigned)downloaded, (unsigned)totalSize,
-                    getProgress() * 100.0f);
+    if (!Update.begin(http.getContentLength(), U_FLASH)) {
+      Log.println(OTA, "Update.begin falhou");
+      Update.printError(Log);
+      stepState = StepState::Failed;
+      break;
     }
+    sum.begin();
+
+    stepState = StepState::Running_2;
+    break;
   }
 
-  http.end();
+  case StepState::Running_2: {
+    if (downloaded < http.getContentLength()) {
+      NetworkClient& stream = http.getNetworkClient();
+      size_t avail = stream.available();
+      if (avail == 0) {
+        break;
+      }
+      uint8_t buf[kChunkSize];
 
-  if (downloaded != totalSize) {
-    Update.abort();
-    Serial.println("[OTA] download incompleto — update cancelado");
-    return false;
+      size_t n = stream.readBytes(buf, min(avail, kChunkSize));
+      if (n > 0) {
+
+        if (Update.write(buf, n) != n) {
+          Log.println(OTA, "Update.write falhou");
+          Update.printError(Log);
+          stepState = StepState::Failed;
+          break;
+        }
+
+        sum.add(buf, n);
+        downloaded += n;
+
+        if (millis() - lastProgressLogMs >= 1000 ||
+            downloaded == http.getContentLength()) {
+          lastProgressLogMs = millis();
+          Log.printf("%s%7.0u / %7.0u [%5.1f%%]\n", OTA,
+                     (unsigned)downloaded, (unsigned)http.getContentLength(),
+                     getProgress() * 100.0f);
+        }
+      }
+      break;
+    }
+    downloadComplete = true;
+    stepState = StepState::Finished;
+    break;
+  }
+
+  default:
+    break;
+  }
+
+  retry.reset();
+  return;
+}
+
+void OtaUpdater::stepDownloadValidation() {
+  if (downloaded != http.getContentLength()) {
+    Log.println(OTA, "download incompleto — update cancelado");
+    stepState = StepState::Failed;
+    return;
   }
 
   if (!Update.end(true)) {
-    setError("Update.end falhou");
-    Update.printError(Serial);
-    return false;
+    Log.println(OTA, "Update.end falhou");
+    Update.printError(Log);
+    stepState = StepState::Failed;
+    return;
   }
 
   String actual = sum.getDigest();
 
-  Serial.print("[OTA] hash calculado: ");
-  Serial.println(actual);
+  Log.println(OTA, "hash calculado: ", actual.c_str());
 
   if (actual != sum.getExpectedHash()) {
-    setError("Integridade falhou (hash)");
-    Serial.printf("[OTA] hash calculado = '%s'\n", actual.c_str());
-    Serial.printf("[OTA] hash esperado  = '%s'\n", sum.getExpectedHash().c_str());
-    return false;
+    Log.println(OTA, "Integridade falhou (hash)");
+    Log.println(OTA, "hash calculado = ", actual.c_str());
+    Log.println(OTA, "hash esperado  = ", sum.getExpectedHash().c_str());
+    stepState = StepState::Failed;
+    return;
   }
 
-  setState(State::Success, "ok — reiniciando");
-  Serial.println("[OTA] Sucesso. Reinicio em 1s. Envie 'firmware markOk' apos boot se tudo estiver ok.");
-  delay(1000);
-  ESP.restart();
-  return true;
+  stepState = StepState::Finished;
 }
 
 void OtaUpdater::update() {
-  if (!isBusy()) return;
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (!started) return;
+  if (state == State::Idle) return;
+  if (stepState == StepState::Failed) {
+    stopUpdate();
+    return;
+  }
+
+  http.update();
 
   if (state == State::FetchingHash) {
-    if (stepFetchHash()) {
-      // passou para Downloading
-    } else if (state != State::Failed) {
-      // tryLater já tratado pelo RetryLogic
+    if (stepState == StepState::Finished) {
+      state = State::Downloading;
+      stepState = StepState::Starting;
+      return;
     }
+    stepFetchHash();
     return;
   }
 
   if (state == State::Downloading) {
-    if (stepDownload()) {
-      // reinicia no sucesso
+    if (stepState == StepState::Finished) {
+      state = State::DownloadValidation;
+      stepState = StepState::Starting;
+      return;
     }
+    stepDownload();
     return;
   }
+
+  if (state == State::DownloadValidation) {
+    if (stepState == StepState::Finished) {
+      state = State::Reboot;
+      stepState = StepState::Starting;
+      return;
+    }
+    stepDownloadValidation();
+    return;
+  }
+
+  if (state == State::Reboot) {
+    stepReboot();
+    return;
+  }
+}
+
+void OtaUpdater::stepReboot() {
+  static unsigned long start_ms;
+
+  if (stepState == StepState::Starting) {
+    Log.println(OTA, "Sucesso. Reinicio em 1s. Envie 'firmware markOk' apos boot se tudo estiver ok.");
+    start_ms = millis();
+    stepState = StepState::Running;
+    return;
+  }
+
+  if (stepState == StepState::Running) {
+    if (millis() - start_ms >= REBOOT_DELAY_MS) {
+      ESP.restart();
+    }
+  }
+
+  return;
 }

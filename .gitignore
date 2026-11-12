@@ -1,8 +1,8 @@
 build
-
-ID    
+ID
 GRTAGS
-GPATH 
+GPATH
 GTAGS
 cscope.*
 BROWSE
+.idea

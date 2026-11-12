@@ -1,23 +1,27 @@
 #include "RetryLogic.hpp"
+#include "Logger.hpp"
 
-RetryLogic::RetryLogic(int maxRetries, unsigned long retryTimeoutMs, unsigned long tryLaterTimeoutMs)
+RetryLogic::RetryLogic(const int maxRetries, const unsigned long retryTimeoutMs, const unsigned long tryLaterTimeoutMs, const char* logPrefix)
     : maxRetries(maxRetries),
       retryTimeoutMs(retryTimeoutMs),
-      tryLaterTimeoutMs(tryLaterTimeoutMs) {}
+      tryLaterTimeoutMs(tryLaterTimeoutMs),
+      logPrefix(logPrefix) {}
 
 bool RetryLogic::canRetry() {
   if (isInTryLater()) {
-    //TODO: niveis de log Serial.println("Aguardando tryLater expirar...");
+    //TODO: niveis de log Log.println("Aguardando tryLater expirar...");
     return false;
   }
-  
+
   if (tryLaterExpired()) {
-    Serial.println("TryLater expirado, resetando retries");
+    Log.print(logPrefix);
+    Log.println("TryLater expirado, resetando retries");
     reset();
   }
 
   if (!hasRetriesLeft()) {
-    Serial.println("Sem mais retries, entrando no tryLater");
+    Log.print(logPrefix);
+    Log.println("Sem mais retries, entrando no tryLater");
     enterTryLater();
     return false;
   }
@@ -38,11 +42,6 @@ bool RetryLogic::hasRetriesLeft() const {
 bool RetryLogic::retryTimeoutHasElapsed() const {
   return (millis() - lastAttemptMs) >= retryTimeoutMs;
 }
-
-// bool RetryLogic::canStart() const {
-//   if (tryLaterUntilMs == 0) return true;
-//   return millis() >= tryLaterUntilMs;
-// }
 
 void RetryLogic::registerAttempt() {
   retryCount++;

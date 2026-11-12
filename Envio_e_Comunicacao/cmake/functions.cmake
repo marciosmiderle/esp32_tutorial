@@ -1,0 +1,46 @@
+function(add_arduino_firmware_target TYPE OUTPUT_PREFIX EXTRA_FLAGS IS_ALL_TARGET)
+  set(DEPEND_FILES ${ARGN}) # resto sao as dependencias
+  set(FIRMWARE_BIN  "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.bin")
+  set(FIRMWARE_MAP  "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.map")
+  set(FIRMWARE_ELF  "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.elf")
+  set(FIRMWARE_MBIN "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.merged.bin")
+  set(FIRMWARE_PART "${CMAKE_BINARY_DIR}/${TYPE}/${OUTPUT_PREFIX}.partitions.bin")
+  set(FIRMWARE_MD5  "${FIRMWARE_BIN}.md5")
+  add_custom_command(
+    OUTPUT "${FIRMWARE_BIN}" "${FIRMWARE_MAP}" "${FIRMWARE_ELF}" "${FIRMWARE_MBIN}" "${FIRMWARE_PART}"
+    COMMAND "${ARDUINO_CLI_EXECUTABLE}" compile
+    --build-path "${CMAKE_BINARY_DIR}/${TYPE}"
+    --warnings all
+    --verbose
+    ${EXTRA_FLAGS}
+    COMMAND ${CMAKE_COMMAND} -E md5sum "${FIRMWARE_BIN}" > "${FIRMWARE_BIN}.md5"
+    DEPENDS ${DEPEND_FILES}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    USES_TERMINAL
+  )
+  if(IS_ALL_TARGET)
+    add_custom_target(${TYPE} ALL DEPENDS "${FIRMWARE_BIN}")
+  else()
+    add_custom_target(${TYPE} DEPENDS "${FIRMWARE_BIN}")
+  endif()
+  set_property(TARGET ${TYPE} APPEND PROPERTY
+    ADDITIONAL_CLEAN_FILES "${FIRMWARE_MD5}"
+  )
+endfunction()
+
+function(find_arduino_cli_executable)
+  find_program(ARDUINO_CLI_EXECUTABLE
+    NAMES arduino-cli arduino-cli.exe
+    HINTS
+    "$ENV{LOCALAPPDATA}/Programs/Arduino CLI"
+    "C:/Program Files/Arduino CLI"
+    "/usr/local/bin"
+    "/opt/homebrew/bin"
+    "$ENV{HOME}/.local/bin"
+  )
+  if(ARDUINO_CLI_EXECUTABLE)
+    message(STATUS "Found arduino-cli: ${ARDUINO_CLI_EXECUTABLE}")
+  else()
+    message(WARNING "arduino-cli not found! Please install it or add it to your PATH.")
+  endif()
+endfunction()
