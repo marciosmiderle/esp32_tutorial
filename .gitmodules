@@ -1,0 +1,3 @@
+[submodule "Envio_e_Comunicacao/libraries/libota"]
+	path = Envio_e_Comunicacao/libraries/libota
+	url = ../libota
