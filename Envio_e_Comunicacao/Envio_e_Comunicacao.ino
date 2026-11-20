@@ -21,13 +21,13 @@
 
 #include "src/Message.hpp"
 #include "src/Publisher.hpp"
-#include "src/HttpClientLocal.hpp"
-#include "src/MqttClient.hpp"
-#include "src/OtaUpdater.hpp"
+#include <HttpClientLocal.hpp>
+#include <MqttClient.hpp>
+#include <OtaUpdater.hpp>
 
-#include "src/Logger.hpp"
-#include "src/LoggerMqtt.hpp"
-#include "src/LoggerSerial.hpp"
+#include <Logger.hpp>
+#include <LoggerMqtt.hpp>
+#include <LoggerSerial.hpp>
 #include "src/Console.hpp"
 #include "src/MqttStream.hpp"
 #include "src/Router.hpp"
